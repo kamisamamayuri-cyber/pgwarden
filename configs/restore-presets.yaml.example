@@ -1,0 +1,31 @@
+# Restore API presets for /api/v1/restores.
+#
+# Defines named restore operations: source database + list of target environments.
+# The restore API copies a backup from source to the specified target.
+#
+# Copy this file to restore-presets.yaml and adjust for your environment.
+
+# OIDC group with full admin access (overrides preset-level RBAC).
+# admin_group: pgwarden_admins
+
+presets:
+  - id: myapp
+    title: myapp — restore prod dump to target environment
+    rbac:
+      view_group: pgwarden_myapp_r       # can view restore history
+      execute_group: pgwarden_myapp_rwx  # can trigger restores
+    source:
+      host: db-prod-01
+      port: 5432
+      database: myapp
+    targets:
+      - environment: staging
+        host: db-staging-01
+        port: 5432
+        database: myapp
+        owner: myapp
+      - environment: rc
+        host: db-rc-01
+        port: 5432
+        database: myapp
+        owner: myapp
