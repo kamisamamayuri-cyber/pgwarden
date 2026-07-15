@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Shield shape -->
+  <path d="M50 5 L90 22 L90 52 C90 72 72 88 50 96 C28 88 10 72 10 52 L10 22 Z"
+        fill="currentColor" opacity="0.15"/>
+  <path d="M50 5 L90 22 L90 52 C90 72 72 88 50 96 C28 88 10 72 10 52 L10 22 Z"
+        fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+  <!-- W letter -->
+  <polyline points="28,35 36,68 50,48 64,68 72,35"
+            fill="none" stroke="currentColor" stroke-width="7"
+            stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

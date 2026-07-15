@@ -1,0 +1,593 @@
+openapi: 3.0.3
+info:
+  title: PG Back Web API
+  description: |
+    HTTP API for restoring PostgreSQL dumps (prod → stage/rc).
+
+    Authentication: Bearer access token from Keycloak, client `individual`.
+    Preset id is defined in `configs/restore-presets.yaml`.
+  version: 1.0.0
+servers:
+  - url: SERVER_URL_PLACEHOLDER
+    description: API v1 (respects PBW_PATH_PREFIX)
+tags:
+  - name: health
+    description: Healthcheck
+  - name: restores
+    description: Restore API
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Healthcheck
+      description: Public endpoint, no authorization required.
+      operationId: getHealth
+      parameters:
+        - name: databases
+          in: query
+          schema:
+            type: boolean
+          description: Include databases_healthy
+        - name: destinations
+          in: query
+          schema:
+            type: boolean
+          description: Include destinations_healthy
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /restores:
+    get:
+      tags: [restores]
+      summary: Database catalog for restore
+      operationId: listRestorePresets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreCatalog"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /restores/{id}:
+    get:
+      tags: [restores]
+      summary: Database info
+      operationId: getRestoreDatabase
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RestorePresetId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreDatabaseInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /restores/{id}/backups:
+    get:
+      tags: [restores]
+      summary: List of successful dumps
+      description: |
+        Dumps from prod for the registered source database (source.pbw_name).
+        Without execution_id/finished_at in POST restore, the latest dump from this list is used.
+      operationId: listRestoreBackups
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RestorePresetId"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 100
+          description: Maximum records
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreBackupList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /restores/{id}/backups/{execution_id}:
+    get:
+      tags: [restores]
+      summary: Dump download link
+      operationId: getRestoreBackupDownload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RestorePresetId"
+        - $ref: "#/components/parameters/ExecutionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreBackupDownloadInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /restores/{id}/restore:
+    get:
+      tags: [restores]
+      summary: Available restore environments
+      operationId: getRestoreTargets
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RestorePresetId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreTargetsInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [restores]
+      summary: Start restore
+      description: |
+        Asynchronous restore (202 Accepted). Body: `application/x-www-form-urlencoded`.
+        Required form field: `environment`.
+
+        The target database from the preset may not be registered in pgbackweb: in that case
+        the connection is assembled from prod source credentials and host/port/database
+        of the target from YAML. If the target is registered, its connection string is used.
+
+        - only `environment` — latest successful dump from prod;
+        - `execution_id` — specific dump from GET .../backups;
+        - `finished_at` — dump by date (YYYY-MM-DD or RFC3339, UTC).
+
+        Cannot specify `execution_id` and `finished_at` at the same time.
+      operationId: startRestore
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RestorePresetId"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/RestoreStartRequest"
+            examples:
+              latestToStage:
+                summary: Latest dump → stage
+                value:
+                  environment: stage
+              latestToRc:
+                summary: Latest dump → rc
+                value:
+                  environment: rc
+              byExecution:
+                summary: Specific execution → rc
+                value:
+                  environment: rc
+                  execution_id: 550e8400-e29b-41d4-a716-446655440000
+              byDate:
+                summary: Dump by date → stage
+                value:
+                  environment: stage
+                  finished_at: "2025-06-15"
+      responses:
+        "202":
+          description: Restore accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreStartResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Restore unavailable (action_available=false)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /restorations/{restoration_id}:
+    get:
+      tags: [restores]
+      summary: Restore task status
+      description: |
+        Poll status of an asynchronous restore after POST .../restore.
+        The message field reflects the current phase: preparing target database,
+        restoring backup, reassigning owner.
+      operationId: getRestorationStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RestorationId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestorationStatusInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak access token, client individual
+  parameters:
+    RestorePresetId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Preset id from configs/restore-presets.yaml
+    ExecutionId:
+      name: execution_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RestorationId:
+      name: restoration_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing or invalid Bearer token
+    NotFound:
+      description: Preset or backup not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Internal error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+    HealthResponse:
+      type: object
+      properties:
+        server_healthy:
+          type: boolean
+        databases_healthy:
+          type: boolean
+        destinations_healthy:
+          type: boolean
+    RestoreEndpoint:
+      type: object
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+        database:
+          type: string
+        owner:
+          type: string
+        pbw_name:
+          type: string
+          description: Database name in pgbackweb (host:port-database)
+    LatestBackupInfo:
+      type: object
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        finished_at:
+          type: string
+          format: date-time
+        path:
+          type: string
+        file_size:
+          type: integer
+          format: int64
+        pg_version:
+          type: string
+    RestoreDatabaseInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        source:
+          $ref: "#/components/schemas/RestoreEndpoint"
+        latest_backup:
+          $ref: "#/components/schemas/LatestBackupInfo"
+        backups_list_request:
+          type: string
+        restore_list_request:
+          type: string
+        restore_request:
+          type: string
+        action_available:
+          type: boolean
+    RestoreCatalog:
+      type: object
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestoreDatabaseInfo"
+    RestoreBackupListItem:
+      type: object
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+        finished_at:
+          type: string
+          format: date-time
+        path:
+          type: string
+        file_size:
+          type: integer
+          format: int64
+        pg_version:
+          type: string
+        download_request:
+          type: string
+    RestoreBackupList:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        source:
+          $ref: "#/components/schemas/RestoreEndpoint"
+        backups_list_request:
+          type: string
+        restore_list_request:
+          type: string
+        restore_request:
+          type: string
+        backups:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestoreBackupListItem"
+    RestoreBackupDownloadInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        execution_id:
+          type: string
+          format: uuid
+        download_request:
+          type: string
+        is_local:
+          type: boolean
+        download_url:
+          type: string
+          description: Presigned S3 URL (~12 h), if not local
+    RestoreEnvironmentInfo:
+      type: object
+      properties:
+        environment:
+          type: string
+        title:
+          type: string
+        backup_mode:
+          type: string
+        target:
+          $ref: "#/components/schemas/RestoreEndpoint"
+        action_available:
+          type: boolean
+        action_request:
+          type: string
+        action_request_body:
+          type: object
+          description: Form fields (Content-Type application/x-www-form-urlencoded)
+          additionalProperties:
+            type: string
+        action_request_body_note:
+          type: string
+        action_request_body_with_execution_id:
+          type: object
+          additionalProperties:
+            type: string
+        action_request_body_with_finished_at:
+          type: object
+          additionalProperties:
+            type: string
+        backups_list_request:
+          type: string
+    RestoreTargetsInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        source:
+          $ref: "#/components/schemas/RestoreEndpoint"
+        restore_list_request:
+          type: string
+        restore_request:
+          type: string
+        environments:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestoreEnvironmentInfo"
+    RestoreStartRequest:
+      type: object
+      required: [environment]
+      properties:
+        environment:
+          type: string
+          description: stage, rc, …
+        execution_id:
+          type: string
+          format: uuid
+        finished_at:
+          type: string
+          description: YYYY-MM-DD or RFC3339 (UTC)
+    RestoreStartResult:
+      type: object
+      properties:
+        restoration_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+        environment:
+          type: string
+        title:
+          type: string
+        backup_mode:
+          type: string
+        restore_request:
+          type: string
+        action_request_body:
+          type: object
+          description: Form fields (Content-Type application/x-www-form-urlencoded)
+          additionalProperties:
+            type: string
+        execution_id:
+          type: string
+          format: uuid
+        backup_finished_at:
+          type: string
+          format: date-time
+        target_database_id:
+          type: string
+          format: uuid
+        target_database_name:
+          type: string
+          description: Target database for restore (host:port-database from preset)
+          example: db-rc-01:5432-myapp
+        status:
+          type: string
+          example: running
+        duration:
+          type: string
+          description: Duration since start
+          example: 0s
+        status_request:
+          type: string
+          example: GET /api/v1/restorations/<uuid>
+        message:
+          type: string
+    RestorationStatusInfo:
+      type: object
+      properties:
+        restoration_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [running, success, failed]
+        message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        duration:
+          type: string
+          description: Restore duration (elapsed for running, total for success/failed)
+          example: 5m12s
+        execution_id:
+          type: string
+          format: uuid
+        database_id:
+          type: string
+          format: uuid
+        database_name:
+          type: string
+        target_database_name:
+          type: string
+          description: Target database for restore (host:port-database)
+          example: db-rc-01:5432-myapp
+        backup_name:
+          type: string
+        log_lines:
+          type: array
+          description: Last lines of psql stderr (up to 5)
+          items:
+            type: string
+          example:
+            - "COPY 123456"
+            - "COPY 234567"
+        status_request:
+          type: string

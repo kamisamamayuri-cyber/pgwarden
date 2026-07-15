@@ -1,0 +1,49 @@
+# Hosts and PostgreSQL cluster ports to onboard into PG Warden.
+#
+# Discovery connects to every cluster as PBW_DISCOVERY_PG_USER and lists
+# pg_database entries where datistemplate=false. Missing databases/backups are
+# created in metadata DB; existing dest_dir entries are left untouched.
+#
+# Copy this file to discovery.yaml and adjust for your environment.
+
+defaults:
+  # UUID of the destination (S3 or local) where backups will be stored.
+  destination_id: 00000000-0000-0000-0000-000000000000
+
+  retention_days: 30
+  time_zone: Europe/Moscow
+  is_active: true
+
+  # Port ranges to scan for PostgreSQL clusters on each host.
+  scan_ports:
+    - "5432"
+    - "5000-60000"
+
+  # Databases to skip on every host.
+  exclude_databases:
+    - postgres
+
+  # Skip databases larger than this size. Empty or "0" = no limit.
+  # max_db_size: "50GB"
+
+  # Cron hour window for auto-generated backup schedules.
+  cron_hour_from: 1
+  cron_hour_to: 5
+  cron_minute_step: 5
+
+# Hosts with streaming replica — pg_dump runs without --serializable-deferrable.
+hosts:
+  - name: db-prod-01
+  - name: db-prod-02
+    connection_host: 10.0.0.2   # optional: connect by IP instead of hostname
+    exclude_databases:
+      - my_temp_db
+  - name: db-prod-03
+    clusters:                   # optional: skip port scan, use explicit ports
+      - port: 5432
+      - port: 16301
+
+# Hosts WITHOUT streaming replica — new backups get --serializable-deferrable
+# automatically to avoid AccessShareLock contention.
+hosts_no_replica:
+  # - name: db-standalone-01

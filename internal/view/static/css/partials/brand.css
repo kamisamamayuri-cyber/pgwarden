@@ -1,0 +1,58 @@
+/*
+ * PG Warden brand styles
+ * Colors: Red #FF001F, White #FFFFFF, Graphite #1E1E1E
+ * Typography: Formular (Regular, Medium) — place woff2 files into /fonts/ if needed.
+ */
+
+@font-face {
+  font-family: "Formular";
+  src:
+    local("Formular"),
+    local("Formular Regular"),
+    local("BF Formular"),
+    url("../fonts/Formular-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Formular";
+  src:
+    local("Formular Medium"),
+    local("BF Formular Medium"),
+    url("../fonts/Formular-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+html {
+  font-family: "Formular", "Helvetica Neue", Arial, sans-serif;
+}
+
+.brand-wordmark {
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.brand-product-name {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  opacity: 0.72;
+}
+
+.brand-mark {
+  color: #ff001f;
+}
+
+[data-theme="dark"] .brand-mark {
+  color: #ff001f;
+}
+
+.brand-auth-shell {
+  background: linear-gradient(160deg, #ff001f 0%, #c40018 55%, #1e1e1e 100%);
+}
