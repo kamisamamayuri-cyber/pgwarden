@@ -7,11 +7,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/labstack/echo/v4"
 	discoveryservice "github.com/kamisamamayuri-cyber/pgwarden/internal/service/discovery"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/validate"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/respondhtmx"
+	"github.com/labstack/echo/v4"
+	nodx "github.com/nodxdev/nodxgo"
 )
 
 func (h *handlers) runDiscoveryHandler(c echo.Context) error {
@@ -63,5 +64,8 @@ func (h *handlers) runDiscoveryHandler(c echo.Context) error {
 		return respondhtmx.ToastError(c, err.Error())
 	}
 
-	return echoutil.RenderNodx(c, http.StatusOK, listRuns(q, pagination, runs))
+	return echoutil.RenderNodx(c, http.StatusOK, nodx.Group(
+		renderDiscoveryRunsTbody(q, pagination, runs, true),
+		discoveryRunModalsOOB(runs),
+	))
 }

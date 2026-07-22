@@ -30,6 +30,18 @@ func validateEnv(env Env) error {
 		return fmt.Errorf("PBW_WORKER_CONCURRENCY must be between 1 and 32")
 	}
 
+	if env.PBW_DUMP_COMPRESSION_LEVEL < 1 || env.PBW_DUMP_COMPRESSION_LEVEL > 9 {
+		return fmt.Errorf("PBW_DUMP_COMPRESSION_LEVEL must be between 1 and 9")
+	}
+
+	if env.PBW_DUMP_PARALLEL_JOBS < 2 || env.PBW_DUMP_PARALLEL_JOBS > 16 {
+		return fmt.Errorf("PBW_DUMP_PARALLEL_JOBS must be between 2 and 16")
+	}
+
+	if env.PBW_RESTORE_PARALLEL_JOBS < 1 || env.PBW_RESTORE_PARALLEL_JOBS > 16 {
+		return fmt.Errorf("PBW_RESTORE_PARALLEL_JOBS must be between 1 and 16")
+	}
+
 	if env.PBW_OIDC_ENABLED {
 		if env.PBW_PUBLIC_URL == "" {
 			return fmt.Errorf("PBW_PUBLIC_URL is required when PBW_OIDC_ENABLED is true")

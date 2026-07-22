@@ -19,6 +19,15 @@ var incompatibleDumpSetParams = []string{
 
 var copyStartLine = regexp.MustCompile(`(?i)^copy\s.*\sfrom\s+stdin;`)
 
+// Statements referencing source-cluster roles, which may not exist on the
+// restore target. Ownership is assigned by the restore flow itself (preset
+// owner), so these are dropped — the restore-side equivalent of
+// pg_dump --no-owner --no-acl. Matched only at column 0 with a trailing
+// semicolon, the way pg_dump emits them, to avoid touching function bodies.
+var roleDependentDumpLine = regexp.MustCompile(
+	`(?i)^(alter\s+.*\s+owner\s+to\s+[^;]+;|grant\s+[^;]*;|revoke\s+[^;]*;|alter\s+default\s+privileges\s+[^;]*;)\s*$`,
+)
+
 // sanitizeDumpReader strips incompatible SET lines from a pg_dump SQL stream.
 // Lines inside COPY ... FROM stdin; data blocks are passed through untouched:
 // table data may legitimately contain lines that look like SET commands.
@@ -63,7 +72,8 @@ func shouldSkipDumpLine(line string, inCopyData *bool) bool {
 		return false
 	}
 
-	return incompatibleDumpSetLine.MatchString(line)
+	return incompatibleDumpSetLine.MatchString(line) ||
+		roleDependentDumpLine.MatchString(line)
 }
 
 func isCopyDataTerminator(line string) bool {

@@ -62,7 +62,7 @@ func listDatabases(
 	databases []dbgen.DatabasesServicePaginateDatabasesRow,
 ) nodx.Node {
 	if len(databases) < 1 {
-		return component.EmptyResultsTr(component.EmptyResultsParams{
+		return component.EmptyResults(component.EmptyResultsParams{
 			Title:    "No databases found",
 			Subtitle: "Databases will appear here after they are added",
 		})
@@ -70,12 +70,12 @@ func listDatabases(
 
 	filterQuery := databasesFilterQuery{Host: host}
 
-	trs := []nodx.Node{}
+	cards := []nodx.Node{}
 	for _, database := range databases {
 		menuItems := []nodx.Node{
 			component.OptionsDropdownA(
 				nodx.Href(pathutil.BuildPath(
-					fmt.Sprintf("/dashboard/executions?database=%s", database.ID),
+					fmt.Sprintf("/dashboard/jobs?database=%s", database.ID),
 				)),
 				nodx.Target("_blank"),
 				lucide.List(),
@@ -103,40 +103,38 @@ func listDatabases(
 			}
 		}
 
-		trs = append(trs, nodx.Tr(
-			nodx.Td(component.OptionsDropdown(
-				nodx.Div(
-					nodx.Class("flex flex-col space-y-1"),
-					nodx.Group(menuItems...),
-				),
-			)),
-			nodx.Td(
-				nodx.Div(
-					nodx.Class("flex items-center space-x-2"),
-					component.HealthStatusPing(
-						database.TestOk, database.TestError, database.LastTestAt,
+		cards = append(cards, component.ItemCard(
+			nil,
+			[]nodx.Node{
+				component.OptionsDropdown(
+					nodx.Div(
+						nodx.Class("flex flex-col space-y-1"),
+						nodx.Group(menuItems...),
 					),
-					component.SpanText(database.Name),
 				),
-			),
-			nodx.Td(component.SpanText("PostgreSQL "+database.PgVersion)),
-			nodx.Td(
-				nodx.Class("space-x-1"),
-				nodx.Group(connCell...),
-			),
-			nodx.Td(component.SpanText(
-				database.CreatedAt.Local().Format(timeutil.LayoutYYYYMMDDHHMMSSPretty),
-			)),
+				component.HealthStatusPing(
+					database.TestOk, database.TestError, database.LastTestAt,
+				),
+				nodx.SpanEl(nodx.Class("font-semibold flex-1 truncate"), component.SpanText(database.Name)),
+				nodx.If(database.Tag != "default", component.ToggleBadge(database.Tag, true)),
+			},
+			[]nodx.Node{
+				component.Stat("Version", component.SpanText("PostgreSQL "+database.PgVersion)),
+				component.Stat("Connection", nodx.SpanEl(nodx.Class("space-x-1"), nodx.Group(connCell...))),
+				component.Stat("Added", component.SpanText(
+					database.CreatedAt.Local().Format(timeutil.LayoutYYYYMMDDHHMMSSPretty),
+				)),
+			},
 		))
 	}
 
 	if pagination.HasNextPage {
-		trs = append(trs, nodx.Tr(
+		cards = append(cards, nodx.Div(
 			htmx.HxGet(buildDatabasesListURL(filterQuery, pagination.NextPage)),
 			htmx.HxTrigger("intersect once"),
 			htmx.HxSwap("afterend"),
 		))
 	}
 
-	return component.RenderableGroup(trs)
+	return component.RenderableGroup(cards)
 }

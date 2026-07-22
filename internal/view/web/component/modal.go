@@ -95,7 +95,7 @@ func Modal(params ModalParams) ModalResult {
 				"absolute z-[1002] top-[50%] left-[50%]":      true,
 				"translate-y-[-50%] translate-x-[-50%]":       true,
 				"max-w-[calc(100dvw-30px)] max-h-[85dvh]":     true,
-				"bg-base-200 rounded-box overflow-y-auto p-0":   true,
+				"bg-base-200 rounded-box overflow-y-auto p-0": true,
 				"shadow-2xl border border-base-300":           true,
 				"overflow-x-hidden whitespace-normal":         true,
 

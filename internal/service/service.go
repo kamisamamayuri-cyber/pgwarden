@@ -7,17 +7,20 @@ import (
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/cron"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/integration"
-	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/auth"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/auditlogs"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/auth"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/backups"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/configfiles"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/databases"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/destinations"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/discovery"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/executions"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/jobs"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/rbac"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/restorations"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/users"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/versioncheck"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/component"
 )
 
 type Service struct {
@@ -28,10 +31,12 @@ type Service struct {
 	DatabasesService    *databases.Service
 	DestinationsService *destinations.Service
 	ExecutionsService   *executions.Service
+	JobsService         *jobs.Service
 	UsersService        *users.Service
 	RestorationsService *restorations.Service
 	RbacService         *rbac.Service
 	DiscoveryService    *discovery.Service
+	VersionCheckService *versioncheck.Service
 }
 
 func New(
@@ -62,6 +67,7 @@ func New(
 		env.PBW_DISCOVERY_SCHEDULED_ENABLED,
 		env.PBW_DISCOVERY_CRON_EXPRESSION,
 		env.PBW_DISCOVERY_TIME_ZONE,
+		int(env.PBW_DISCOVERY_EVENTS_RETENTION_DAYS),
 	)
 	configFilesService.SetDiscoveryService(discoveryService)
 	restorationsService := restorations.New(
@@ -79,15 +85,19 @@ func New(
 
 	return &Service{
 		AuthService:         authService,
-		AuditLogsService:    auditlogs.New(db),
+		AuditLogsService:    auditlogs.New(db, int(env.PBW_AUDIT_LOG_RETENTION_DAYS)),
 		BackupsService:      backupsService,
 		ConfigFilesService:  configFilesService,
 		DatabasesService:    databasesService,
 		DestinationsService: destinationsService,
 		ExecutionsService:   executionsService,
+		JobsService:         jobs.New(dbgen),
 		UsersService:        usersService,
 		RestorationsService: restorationsService,
 		RbacService:         rbacService,
 		DiscoveryService:    discoveryService,
+		VersionCheckService: versioncheck.New(
+			"kamisamamayuri-cyber", "pgwarden", component.AppVersion,
+		),
 	}, nil
 }

@@ -38,12 +38,18 @@ func (h *handlers) editDatabaseHandler(c echo.Context) error {
 		return respondhtmx.ToastError(c, err.Error())
 	}
 
+	tag := formData.Tag
+	if tag == "" {
+		tag = "default"
+	}
+
 	_, err = h.servs.DatabasesService.UpdateDatabase(
 		ctx, dbgen.DatabasesServiceUpdateDatabaseParams{
 			ID:               databaseID,
 			Name:             sql.NullString{String: formData.Name, Valid: true},
 			PgVersion:        sql.NullString{String: formData.Version, Valid: true},
 			ConnectionString: sql.NullString{String: formData.ConnectionString, Valid: true},
+			Tag:              sql.NullString{String: tag, Valid: true},
 		},
 	)
 	if err != nil {
@@ -113,6 +119,17 @@ func editDatabaseButton(
 					HelpText:    "Must be a valid PostgreSQL connection string with database name. Stored with PGP encryption.",
 					Children: []nodx.Node{
 						nodx.Value(database.DecryptedConnectionString),
+					},
+				}),
+
+				component.InputControl(component.InputControlParams{
+					Name:        "tag",
+					Label:       "Worker tag",
+					Placeholder: "default",
+					Type:        component.InputTypeText,
+					HelpText:    "Only workers configured with a matching PBW_WORKER_TAGS entry run the connectivity healthcheck for this database. Empty = \"default\"",
+					Children: []nodx.Node{
+						nodx.Value(database.Tag),
 					},
 				}),
 			),

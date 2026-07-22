@@ -15,31 +15,32 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/cron"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/logger"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/backups"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/databases"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/paginateutil"
+	"github.com/lib/pq"
 )
 
 var ErrDiscoveryAlreadyRunning = errors.New("discovery is already running")
 
 type Service struct {
-	cfg              Config
-	cfgMu            sync.RWMutex
-	dbgen            *dbgen.Queries
-	databasesService *databases.Service
-	backupsService   *backups.Service
-	pgUser           string
-	pgPassword       string
-	cr               *cron.Cron
-	scheduledEnabled bool
-	cronExpression   string
-	timeZone         string
-	runMu            sync.Mutex
-	runActive        bool
+	cfg                 Config
+	cfgMu               sync.RWMutex
+	dbgen               *dbgen.Queries
+	databasesService    *databases.Service
+	backupsService      *backups.Service
+	pgUser              string
+	pgPassword          string
+	cr                  *cron.Cron
+	scheduledEnabled    bool
+	cronExpression      string
+	timeZone            string
+	eventsRetentionDays int
+	runMu               sync.Mutex
+	runActive           bool
 }
 
 // ReloadConfig hot-reloads the discovery configuration without a pod restart.
@@ -125,18 +126,20 @@ func New(
 	scheduledEnabled bool,
 	cronExpression string,
 	timeZone string,
+	eventsRetentionDays int,
 ) *Service {
 	return &Service{
-		cfg:              cfg,
-		dbgen:            dbgen,
-		databasesService: databasesService,
-		backupsService:   backupsService,
-		pgUser:           pgUser,
-		pgPassword:       pgPassword,
-		cr:               cr,
-		scheduledEnabled: scheduledEnabled,
-		cronExpression:   cronExpression,
-		timeZone:         timeZone,
+		cfg:                 cfg,
+		dbgen:               dbgen,
+		databasesService:    databasesService,
+		backupsService:      backupsService,
+		pgUser:              pgUser,
+		pgPassword:          pgPassword,
+		cr:                  cr,
+		scheduledEnabled:    scheduledEnabled,
+		cronExpression:      cronExpression,
+		timeZone:            timeZone,
+		eventsRetentionDays: eventsRetentionDays,
 	}
 }
 
@@ -258,8 +261,8 @@ func (s *Service) runLocked(ctx context.Context) (Result, error) {
 		Message: "Discovery scan started",
 	})
 	type hostEntry struct {
-		host          HostConfig
-		noReplica     bool
+		host      HostConfig
+		noReplica bool
 	}
 	var allHosts []hostEntry
 	for _, h := range cfg.Hosts {
@@ -564,10 +567,10 @@ func (s *Service) discoverClusters(
 	}
 	progressStep := discoveryProgressStep(len(ports))
 	s.logEvent(ctx, Event{
-		RunID:   runID,
-		Level:   "info",
-		Event:   "host_scan_started",
-		Host:    host.Name,
+		RunID: runID,
+		Level: "info",
+		Event: "host_scan_started",
+		Host:  host.Name,
 		Message: fmt.Sprintf(
 			"Phase 1: fast TCP scan of %d ports on %s",
 			len(ports),
@@ -591,12 +594,12 @@ func (s *Service) discoverClusters(
 	if len(openPorts) == 0 {
 		s.logEvent(ctx, Event{
 			RunID:   runID,
-			Level:   "error",
+			Level:   "warn",
 			Event:   "host_scan_finished",
 			Host:    host.Name,
 			Message: fmt.Sprintf("No open TCP ports in range (%d checked)", len(ports)),
 		})
-		return nil, fmt.Errorf("no open TCP ports on %s", host.Name)
+		return nil, nil
 	}
 
 	s.logEvent(ctx, Event{
@@ -628,16 +631,16 @@ func (s *Service) discoverClusters(
 	})
 	if len(clusters) == 0 {
 		s.logEvent(ctx, Event{
-			RunID:   runID,
-			Level:   "error",
-			Event:   "host_scan_finished",
-			Host:    host.Name,
+			RunID: runID,
+			Level: "warn",
+			Event: "host_scan_finished",
+			Host:  host.Name,
 			Message: fmt.Sprintf(
 				"No PostgreSQL ports among %d open TCP ports",
 				len(openPorts),
 			),
 		})
-		return nil, fmt.Errorf("no PostgreSQL ports discovered on %s", host.Name)
+		return nil, nil
 	}
 	s.logEvent(ctx, Event{
 		RunID: runID,
@@ -669,8 +672,8 @@ func (s *Service) scanOpenTCPPorts(
 
 	jobs := make(chan int, workerCount)
 	type tcpResult struct {
-		port  int
-		open  bool
+		port int
+		open bool
 	}
 	results := make(chan tcpResult, workerCount)
 
@@ -804,11 +807,11 @@ func (s *Service) probePostgresPorts(
 		if logEachFailure {
 			if isPostgresAuthError(result.rawError) {
 				s.logEvent(ctx, Event{
-					RunID:   runID,
-					Level:   "warn",
-					Event:   "postgres_auth_failed",
-					Host:    host.Name,
-					Port:    result.port,
+					RunID: runID,
+					Level: "warn",
+					Event: "postgres_auth_failed",
+					Host:  host.Name,
+					Port:  result.port,
 					Message: fmt.Sprintf(
 						"PostgreSQL detected but probe user has no access (grant SELECT to probe user): %s",
 						result.error,
@@ -816,11 +819,11 @@ func (s *Service) probePostgresPorts(
 				})
 			} else {
 				s.logEvent(ctx, Event{
-					RunID:   runID,
-					Level:   "info",
-					Event:   "port_not_postgres",
-					Host:    host.Name,
-					Port:    result.port,
+					RunID: runID,
+					Level: "info",
+					Event: "port_not_postgres",
+					Host:  host.Name,
+					Port:  result.port,
 					Message: fmt.Sprintf(
 						"Open TCP port is not PostgreSQL (expected during scan): %s",
 						result.error,
@@ -1031,22 +1034,25 @@ func (s *Service) ensureBackup(
 		return false, false, false, err
 	}
 	_, err = s.backupsService.CreateBackup(opCtx, dbgen.BackupsServiceCreateBackupParams{
-		DatabaseID:                 databaseID,
-		DestinationID:              uuid.NullUUID{UUID: destinationID, Valid: true},
-		IsLocal:                    false,
-		Name:                       name,
-		CronExpression:             s.randomCron(),
-		TimeZone:                   s.getConfig().Defaults.TimeZone,
-		IsActive:                   *s.getConfig().Defaults.IsActive,
-		DestDir:                    destDir,
-		RetentionDays:              s.getConfig().Defaults.RetentionDays,
-		OptDataOnly:                false,
-		OptSchemaOnly:              false,
-		OptClean:                   false,
-		OptIfExists:                false,
-		OptCreate:                  false,
-		OptNoComments:              false,
-		OptSerializableDeferrable:  serializableDeferrable,
+		DatabaseID:                databaseID,
+		DestinationID:             uuid.NullUUID{UUID: destinationID, Valid: true},
+		IsLocal:                   false,
+		Name:                      name,
+		CronExpression:            s.randomCron(),
+		TimeZone:                  s.getConfig().Defaults.TimeZone,
+		IsActive:                  *s.getConfig().Defaults.IsActive,
+		DestDir:                   destDir,
+		RetentionDays:             s.getConfig().Defaults.RetentionDays,
+		MonthlyRetentionEnabled:   s.getConfig().Defaults.MonthlyRetentionEnabled,
+		OptDataOnly:               false,
+		OptSchemaOnly:             false,
+		OptClean:                  false,
+		OptIfExists:               false,
+		OptCreate:                 false,
+		OptNoComments:             false,
+		OptSerializableDeferrable: serializableDeferrable,
+		ParallelDumpEnabled:       s.getConfig().Defaults.ParallelDump && !serializableDeferrable,
+		Tag:                       s.getConfig().TagForHost(host),
 	})
 	if err != nil {
 		return dbCreated, false, false, err
@@ -1074,6 +1080,7 @@ func (s *Service) ensureDatabase(
 		Name:             name,
 		ConnectionString: s.connectionString(host.connectionAddress(), cluster.Port, db.Name),
 		PgVersion:        db.Version,
+		Tag:              s.getConfig().TagForHost(host),
 	})
 	if err != nil {
 		return uuid.Nil, false, err

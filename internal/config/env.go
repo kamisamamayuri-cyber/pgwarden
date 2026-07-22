@@ -25,14 +25,35 @@ type Env struct {
 	PBW_SCHEDULED_BACKUPS_ENABLED bool `env:"PBW_SCHEDULED_BACKUPS_ENABLED" envDefault:"true"`
 	// Default retention for execution records and backup files when backup.retention_days=0.
 	PBW_EXECUTION_RETENTION_DAYS int16 `env:"PBW_EXECUTION_RETENTION_DAYS" envDefault:"30"`
+	// Default monthly retention (in months) for the first successful execution
+	// of each calendar month, when backup.monthly_retention_months=0.
+	PBW_MONTHLY_RETENTION_MONTHS int16 `env:"PBW_MONTHLY_RETENTION_MONTHS" envDefault:"12"`
+	// How long finished restoration records are kept before being purged.
+	PBW_RESTORATION_RETENTION_DAYS int16 `env:"PBW_RESTORATION_RETENTION_DAYS" envDefault:"30"`
+	// How long discovery run events are kept before being purged.
+	PBW_DISCOVERY_EVENTS_RETENTION_DAYS int16 `env:"PBW_DISCOVERY_EVENTS_RETENTION_DAYS" envDefault:"14"`
+	// How long audit log entries (restore launches, dump downloads) are kept
+	// before being purged. Longer default than other retention settings since
+	// audit logs are often needed for compliance review.
+	PBW_AUDIT_LOG_RETENTION_DAYS int16 `env:"PBW_AUDIT_LOG_RETENTION_DAYS" envDefault:"180"`
 	// pg_dump --lock-wait-timeout: fail instead of waiting indefinitely for a
 	// table lock. Any PostgreSQL time value ("10min", "300s"); empty disables the flag.
 	PBW_DUMP_LOCK_WAIT_TIMEOUT string `env:"PBW_DUMP_LOCK_WAIT_TIMEOUT" envDefault:"10min"`
+	// DEFLATE level for the dump zip, 1 (fastest) to 9 (smallest).
+	// Levels 1-3 are nearly the same speed; above 6 compression gets much
+	// slower with little size gain on SQL dumps.
+	PBW_DUMP_COMPRESSION_LEVEL int `env:"PBW_DUMP_COMPRESSION_LEVEL" envDefault:"3"`
+	// Default worker count for backups with parallel dump enabled, when the
+	// backup itself does not set one (parallel_dump_jobs=0).
+	PBW_DUMP_PARALLEL_JOBS int `env:"PBW_DUMP_PARALLEL_JOBS" envDefault:"4"`
+	// Worker count for restoring multi-file (parallel dump) archives.
+	PBW_RESTORE_PARALLEL_JOBS int `env:"PBW_RESTORE_PARALLEL_JOBS" envDefault:"4"`
 	// Process role: "web" serves only UI/API, "worker" runs cron + the dump/
 	// restore queue (plus /healthz), "all" does everything in one process.
 	PBW_ROLE string `env:"PBW_ROLE" envDefault:"all"`
 	// How many dumps/restores one worker process runs in parallel.
 	PBW_WORKER_CONCURRENCY int `env:"PBW_WORKER_CONCURRENCY" envDefault:"2"`
+	PBW_WORKER_TAGS string `env:"PBW_WORKER_TAGS" envDefault:"default"`
 	// Path to YAML file with restore API presets.
 	PBW_RESTORE_PRESETS_PATH string `env:"PBW_RESTORE_PRESETS_PATH" envDefault:"configs/restore-presets.yaml"`
 	// Keycloak/AD group with full PG Warden access. Overrides admin_group from restore-presets.yaml when set.

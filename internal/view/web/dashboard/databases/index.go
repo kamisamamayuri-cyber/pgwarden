@@ -49,24 +49,9 @@ func indexPage(reqCtx reqctx.Ctx, queryData databasesQueryData) nodx.Node {
 			Children: []nodx.Node{
 				databaseHostFilter(queryData.Host),
 				nodx.Div(
-					nodx.Class("overflow-x-auto"),
-					nodx.Table(
-						nodx.Class("table text-nowrap"),
-						nodx.Thead(
-							nodx.Tr(
-								nodx.Th(nodx.Class("w-1")),
-								nodx.Th(component.SpanText(i18n.LabelName)),
-								nodx.Th(component.SpanText(i18n.LabelVersion)),
-								nodx.Th(component.SpanText(i18n.LabelConnectionString)),
-								nodx.Th(component.SpanText(i18n.LabelCreatedAt)),
-							),
-						),
-						nodx.Tbody(
-							component.SkeletonTr(8),
-							htmx.HxGet(buildDatabasesListURL(filterQuery, 1)),
-							htmx.HxTrigger("load"),
-						),
-					),
+					component.SkeletonCard(6),
+					htmx.HxGet(buildDatabasesListURL(filterQuery, 1)),
+					htmx.HxTrigger("load"),
 				),
 			},
 		}),

@@ -4,8 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/google/uuid"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/logtail"
 )
 
 func (s *Service) GetRestorationRow(
@@ -16,11 +17,11 @@ func (s *Service) GetRestorationRow(
 
 // RestorationStatusInfo is GET /api/v1/restorations/:restoration_id.
 type RestorationStatusInfo struct {
-	RestorationID uuid.UUID  `json:"restoration_id"`
-	Status        string     `json:"status"`
-	Message       string     `json:"message,omitempty"`
-	StartedAt     time.Time  `json:"started_at"`
-	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
+	RestorationID      uuid.UUID  `json:"restoration_id"`
+	Status             string     `json:"status"`
+	Message            string     `json:"message,omitempty"`
+	StartedAt          time.Time  `json:"started_at"`
+	UpdatedAt          *time.Time `json:"updated_at,omitempty"`
 	FinishedAt         *time.Time `json:"finished_at,omitempty"`
 	Duration           string     `json:"duration,omitempty"`
 	ExecutionID        uuid.UUID  `json:"execution_id"`
@@ -74,7 +75,7 @@ func (s *Service) GetRestorationStatus(
 		info.BackupName = row.BackupName
 	}
 	if row.LogTail.Valid {
-		info.LogLines = LogTailToLines(row.LogTail.String)
+		info.LogLines = logtail.Parse(row.LogTail.String)
 	}
 	info.Duration = RestorationDuration(row.StartedAt, row.FinishedAt)
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -20,8 +19,6 @@ type s3ReaderAt struct {
 	bucket string
 	key    string
 	size   int64
-
-	mu sync.Mutex
 }
 
 func newS3ReaderAt(
@@ -43,9 +40,6 @@ func (r *s3ReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	if off >= r.size {
 		return 0, io.EOF
 	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	toRead := int64(len(p))
 	maxEnd := r.size - 1

@@ -2,14 +2,14 @@ package restorations
 
 import (
 	"database/sql"
-	"strings"
 
+	"github.com/google/uuid"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/restorations"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/logtail"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/timeutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/component"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/i18n"
-	"github.com/google/uuid"
 	nodx "github.com/nodxdev/nodxgo"
 	htmx "github.com/nodxdev/nodxgo-htmx"
 )
@@ -66,8 +66,13 @@ func restorationDetailsLoadingID(id uuid.UUID) string {
 	return "restoration-details-loading-" + id.String()
 }
 
+func restorationLogID(id uuid.UUID) string {
+	return "restoration-log-" + id.String()
+}
+
 func renderRestorationDetails(v restorationDetailsView, poll bool) nodx.Node {
 	detailsID := "restoration-details-" + v.ID.String()
+	logID := restorationLogID(v.ID)
 
 	nodes := []nodx.Node{
 		nodx.Id(detailsID),
@@ -79,8 +84,12 @@ func renderRestorationDetails(v restorationDetailsView, poll bool) nodx.Node {
 		nodes = append([]nodx.Node{
 			htmx.HxGet(buildRestorationDetailsURL(v.ID)),
 			htmx.HxTrigger(openEvent + ", every 3s"),
-			htmx.HxSwap("outerHTML"),
+			htmx.HxSwap("innerHTML"),
 			htmx.HxIndicator("#" + restorationDetailsLoadingID(v.ID)),
+			nodx.Attr("hx-on:htmx:before-swap",
+				"let el=this.querySelector('#"+logID+"'); if(el) this.dataset.logScroll=el.scrollTop"),
+			nodx.Attr("hx-on:htmx:after-swap",
+				"let el=this.querySelector('#"+logID+"'); if(el && this.dataset.logScroll) el.scrollTop=this.dataset.logScroll"),
 		}, nodes...)
 	}
 
@@ -90,7 +99,7 @@ func renderRestorationDetails(v restorationDetailsView, poll bool) nodx.Node {
 func restorationDetailsTable(v restorationDetailsView) nodx.Node {
 	logLines := []string{}
 	if v.LogTail.Valid {
-		logLines = restorations.LogTailToLines(v.LogTail.String)
+		logLines = logtail.Parse(v.LogTail.String)
 	}
 
 	startedAt := v.StartedAt.Time
@@ -133,14 +142,7 @@ func restorationDetailsTable(v restorationDetailsView) nodx.Node {
 			len(logLines) > 0,
 			nodx.Tr(
 				nodx.Th(component.SpanText("Log (last lines)")),
-				nodx.Td(
-					nodx.Pre(
-						nodx.Class(
-							"text-xs whitespace-pre-wrap break-all max-h-40 overflow-y-auto",
-						),
-						nodx.Text(strings.Join(logLines, "\n")),
-					),
-				),
+				nodx.Td(component.LogTailBox(logLines, nodx.Id(restorationLogID(v.ID)))),
 			),
 		),
 		nodx.Tr(

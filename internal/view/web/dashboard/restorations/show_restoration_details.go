@@ -3,11 +3,13 @@ package restorations
 import (
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/respondhtmx"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
+
+const htmxStopPollingStatus = 286
 
 func (h *handlers) restorationDetailsHandler(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -23,7 +25,9 @@ func (h *handlers) restorationDetailsHandler(c echo.Context) error {
 	}
 
 	view := restorationDetailsViewFromGet(row)
-	return echoutil.RenderNodx(
-		c, http.StatusOK, renderRestorationDetails(view, view.Status == "running"),
-	)
+	status := http.StatusOK
+	if view.Status != "running" && view.Status != "queued" {
+		status = htmxStopPollingStatus
+	}
+	return echoutil.RenderNodx(c, status, restorationDetailsTable(view))
 }

@@ -6,6 +6,7 @@ SET
   path = COALESCE(sqlc.narg('path'), path),
   finished_at = COALESCE(sqlc.narg('finished_at'), finished_at),
   deleted_at = COALESCE(sqlc.narg('deleted_at'), deleted_at),
-  file_size = COALESCE(sqlc.narg('file_size'), file_size)
+  file_size = COALESCE(sqlc.narg('file_size'), file_size),
+  log_tail = COALESCE(sqlc.narg('log_tail'), log_tail)
 WHERE id = @id
 RETURNING *;

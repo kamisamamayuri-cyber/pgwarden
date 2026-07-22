@@ -16,19 +16,24 @@ import (
 // queuedRestoreParams is the non-secret part of a queued restoration, stored
 // as JSON in restorations.params. The connection string is stored separately,
 // encrypted with pgcrypto (restorations.enc_conn_string).
+const restoreOpFixOwner = "fix_owner"
+
 type queuedRestoreParams struct {
+	Op                 string `json:"op,omitempty"`
 	TargetDatabaseName string `json:"target_database_name,omitempty"`
 	TargetOwner        string `json:"target_owner,omitempty"`
 }
 
 // EnqueueRestorationParams describes a restore job to put into the queue.
 type EnqueueRestorationParams struct {
+	Op            string
 	ExecutionID   uuid.UUID
 	DatabaseID    uuid.NullUUID
 	TargetPbwName string
 	// ConnString is required when DatabaseID is not set; stored encrypted.
 	ConnString string
 	Target     *RestoreTargetOptions
+	Tag        string
 }
 
 // EnqueueRestoration puts a restore job into the queue. A worker picks it up
@@ -46,7 +51,7 @@ func (s *Service) EnqueueRestoration(
 		}
 	}
 
-	queued := queuedRestoreParams{}
+	queued := queuedRestoreParams{Op: params.Op}
 	if params.Target != nil {
 		queued.TargetDatabaseName = params.Target.DatabaseName
 		queued.TargetOwner = params.Target.Owner
@@ -54,6 +59,11 @@ func (s *Service) EnqueueRestoration(
 	rawParams, err := json.Marshal(queued)
 	if err != nil {
 		return dbgen.Restoration{}, err
+	}
+
+	tag := params.Tag
+	if tag == "" {
+		tag = "default"
 	}
 
 	res, err := s.dbgen.RestorationsServiceEnqueueRestoration(
@@ -67,6 +77,7 @@ func (s *Service) EnqueueRestoration(
 			Params:        sql.NullString{Valid: true, String: string(rawParams)},
 			ConnString:    params.ConnString,
 			EncryptionKey: s.env.PBW_ENCRYPTION_KEY,
+			Tag:           tag,
 		},
 	)
 	if err != nil {
@@ -81,11 +92,12 @@ func (s *Service) EnqueueRestoration(
 // ClaimRestoration atomically claims one queued restoration for a worker.
 // Returns ok=false when the queue is empty.
 func (s *Service) ClaimRestoration(
-	ctx context.Context, claimedBy string,
+	ctx context.Context, claimedBy string, tags []string,
 ) (dbgen.RestorationsServiceClaimRestorationRow, bool, error) {
 	row, err := s.dbgen.RestorationsServiceClaimRestoration(
 		ctx, dbgen.RestorationsServiceClaimRestorationParams{
 			ClaimedBy:     sql.NullString{Valid: true, String: claimedBy},
+			Tags:          tags,
 			EncryptionKey: s.env.PBW_ENCRYPTION_KEY,
 		},
 	)
@@ -133,6 +145,10 @@ func (s *Service) RunClaimedRestoration(
 			})
 			return failErr
 		}
+	}
+
+	if queued.Op == restoreOpFixOwner {
+		return s.runFixOwnerTask(ctx, claim, queued)
 	}
 
 	var target *RestoreTargetOptions

@@ -1,4 +1,4 @@
-package restorations
+package logtail
 
 import (
 	"strings"
@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-const restorationLogTailMaxLines = 20
+const MaxLines = 20
 
-type restorationLogTail struct {
+type Tail struct {
 	mu          sync.Mutex
 	lines       []string
 	pending     strings.Builder
@@ -17,21 +17,18 @@ type restorationLogTail struct {
 	minFlushGap time.Duration
 	seq         uint64
 
-	// flushMu serializes flush callbacks; flushedSeq drops snapshots that were
-	// taken before an already flushed one, so an older async flush can never
-	// overwrite a newer log tail in the database.
 	flushMu    sync.Mutex
 	flushedSeq uint64
 }
 
-func newRestorationLogTail(flush func(lines []string)) *restorationLogTail {
-	return &restorationLogTail{
+func New(flush func(lines []string)) *Tail {
+	return &Tail{
 		flush:       flush,
 		minFlushGap: 2 * time.Second,
 	}
 }
 
-func (t *restorationLogTail) Write(p []byte) (int, error) {
+func (t *Tail) Write(p []byte) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -55,8 +52,8 @@ func (t *restorationLogTail) Write(p []byte) (int, error) {
 		}
 
 		t.lines = append(t.lines, line)
-		if len(t.lines) > restorationLogTailMaxLines {
-			t.lines = t.lines[len(t.lines)-restorationLogTailMaxLines:]
+		if len(t.lines) > MaxLines {
+			t.lines = t.lines[len(t.lines)-MaxLines:]
 		}
 	}
 
@@ -64,7 +61,7 @@ func (t *restorationLogTail) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (t *restorationLogTail) maybeFlushLocked() {
+func (t *Tail) maybeFlushLocked() {
 	if t.flush == nil || len(t.lines) == 0 {
 		return
 	}
@@ -79,7 +76,7 @@ func (t *restorationLogTail) maybeFlushLocked() {
 	go t.runFlush(seq, lines)
 }
 
-func (t *restorationLogTail) flushNow() {
+func (t *Tail) FlushNow() {
 	t.mu.Lock()
 	if t.flush == nil || len(t.lines) == 0 {
 		t.mu.Unlock()
@@ -93,7 +90,7 @@ func (t *restorationLogTail) flushNow() {
 	t.runFlush(seq, lines)
 }
 
-func (t *restorationLogTail) runFlush(seq uint64, lines []string) {
+func (t *Tail) runFlush(seq uint64, lines []string) {
 	t.flushMu.Lock()
 	defer t.flushMu.Unlock()
 
@@ -104,18 +101,17 @@ func (t *restorationLogTail) runFlush(seq uint64, lines []string) {
 	t.flush(lines)
 }
 
-func linesToLogTail(lines []string) string {
+func Join(lines []string) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	if len(lines) > restorationLogTailMaxLines {
-		lines = lines[len(lines)-restorationLogTailMaxLines:]
+	if len(lines) > MaxLines {
+		lines = lines[len(lines)-MaxLines:]
 	}
 	return strings.Join(lines, "\n")
 }
 
-// LogTailToLines parses stored log tail into at most restorationLogTailMaxLines lines.
-func LogTailToLines(raw string) []string {
+func Parse(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -129,8 +125,8 @@ func LogTailToLines(raw string) []string {
 			result = append(result, line)
 		}
 	}
-	if len(result) > restorationLogTailMaxLines {
-		result = result[len(result)-restorationLogTailMaxLines:]
+	if len(result) > MaxLines {
+		result = result[len(result)-MaxLines:]
 	}
 	return result
 }

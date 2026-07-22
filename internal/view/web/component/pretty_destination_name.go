@@ -27,7 +27,7 @@ func PrettyDestinationName(
 	}
 
 	return nodx.SpanEl(
-		nodx.Class("inline flex justify-start items-center space-x-1 font-mono"),
+		nodx.Class("inline-flex justify-start items-center space-x-1 font-mono"),
 		icon(),
 		SpanText(destinationName.String),
 	)

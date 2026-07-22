@@ -1,12 +1,13 @@
 -- name: RestorationsServiceEnqueueRestoration :one
 INSERT INTO restorations (
-  execution_id, database_id, target_database_name, status, params, enc_conn_string
+  execution_id, database_id, target_database_name, status, params, enc_conn_string, tag
 )
 VALUES (
   @execution_id, @database_id, @target_database_name, 'queued', @params,
   CASE WHEN @conn_string::TEXT <> ''
     THEN pgp_sym_encrypt(@conn_string::TEXT, @encryption_key::TEXT)
-  END
+  END,
+  @tag
 )
 RETURNING *;
 
@@ -20,6 +21,7 @@ SET
 WHERE id = (
   SELECT id FROM restorations
   WHERE status = 'queued'
+  AND tag = ANY(@tags::TEXT[])
   ORDER BY started_at
   LIMIT 1
   FOR UPDATE SKIP LOCKED

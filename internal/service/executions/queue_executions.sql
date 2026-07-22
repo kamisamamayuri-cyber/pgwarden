@@ -6,9 +6,11 @@ SET
   heartbeat_at = now(),
   started_at = now()
 WHERE id = (
-  SELECT id FROM executions
-  WHERE status = 'queued' AND deleted_at IS NULL
-  ORDER BY started_at
+  SELECT executions.id FROM executions
+  INNER JOIN backups ON backups.id = executions.backup_id
+  WHERE executions.status = 'queued' AND executions.deleted_at IS NULL
+  AND backups.tag = ANY(@tags::TEXT[])
+  ORDER BY executions.started_at
   LIMIT 1
   FOR UPDATE SKIP LOCKED
 )

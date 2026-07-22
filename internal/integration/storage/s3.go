@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -15,12 +16,55 @@ import (
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/strutil"
 )
 
+const s3StallTimeout = 15 * time.Minute
+
+const (
+	s3UploadPartSize    = 16 * 1024 * 1024
+	s3UploadConcurrency = 12
+)
+
 var sharedS3HTTPClient = &http.Client{
 	Transport: &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
+		DialContext:           stallGuardedDialContext(10*time.Second, s3StallTimeout),
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ExpectContinueTimeout: 5 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   16,
+		IdleConnTimeout:       90 * time.Second,
 	},
+}
+
+func stallGuardedDialContext(
+	connectTimeout, stallTimeout time.Duration,
+) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: connectTimeout}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dialer.DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &stallGuardedConn{Conn: conn, timeout: stallTimeout}, nil
+	}
+}
+
+type stallGuardedConn struct {
+	net.Conn
+	timeout time.Duration
+}
+
+func (c *stallGuardedConn) Read(b []byte) (int, error) {
+	if err := c.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Read(b)
+}
+
+func (c *stallGuardedConn) Write(b []byte) (int, error) {
+	if err := c.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Write(b)
 }
 
 // createS3Client creates a new S3 client
@@ -100,7 +144,10 @@ func (Client) S3Upload(
 	key = strutil.RemoveLeadingSlash(key)
 	contentType := strutil.GetContentTypeFromFileName(key)
 
-	uploader := manager.NewUploader(s3Client)
+	uploader := manager.NewUploader(s3Client, func(u *manager.Uploader) {
+		u.PartSize = s3UploadPartSize
+		u.Concurrency = s3UploadConcurrency
+	})
 	_, err = uploader.Upload(
 		ctx,
 		&s3.PutObjectInput{

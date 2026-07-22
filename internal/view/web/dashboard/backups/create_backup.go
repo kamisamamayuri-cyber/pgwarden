@@ -4,17 +4,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/staticdata"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/pathutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/validate"
-	webaccess "github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/access"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/reqctx"
+	webaccess "github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/access"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/component"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/i18n"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/respondhtmx"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	nodx "github.com/nodxdev/nodxgo"
 	alpine "github.com/nodxdev/nodxgo-alpine"
@@ -30,22 +30,25 @@ func (h *handlers) createBackupHandler(c echo.Context) error {
 	}
 
 	var formData struct {
-		DatabaseID     uuid.UUID `form:"database_id" validate:"required,uuid"`
-		DestinationID  uuid.UUID `form:"destination_id" validate:"omitempty,uuid"`
-		IsLocal        string    `form:"is_local" validate:"required,oneof=true false"`
-		Name           string    `form:"name" validate:"required"`
-		CronExpression string    `form:"cron_expression" validate:"required"`
-		TimeZone       string    `form:"time_zone" validate:"required"`
-		IsActive       string    `form:"is_active" validate:"required,oneof=true false"`
-		DestDir        string    `form:"dest_dir" validate:"required"`
-		RetentionDays  int16     `form:"retention_days"`
-		OptDataOnly    string    `form:"opt_data_only" validate:"required,oneof=true false"`
-		OptSchemaOnly  string    `form:"opt_schema_only" validate:"required,oneof=true false"`
-		OptClean       string    `form:"opt_clean" validate:"required,oneof=true false"`
-		OptIfExists    string    `form:"opt_if_exists" validate:"required,oneof=true false"`
-		OptCreate      string    `form:"opt_create" validate:"required,oneof=true false"`
-		OptNoComments              string `form:"opt_no_comments" validate:"required,oneof=true false"`
-		OptSerializableDeferrable  string `form:"opt_serializable_deferrable" validate:"required,oneof=true false"`
+		DatabaseID                uuid.UUID `form:"database_id" validate:"required,uuid"`
+		DestinationID             uuid.UUID `form:"destination_id" validate:"omitempty,uuid"`
+		IsLocal                   string    `form:"is_local" validate:"required,oneof=true false"`
+		Name                      string    `form:"name" validate:"required"`
+		CronExpression            string    `form:"cron_expression" validate:"required"`
+		TimeZone                  string    `form:"time_zone" validate:"required"`
+		IsActive                  string    `form:"is_active" validate:"required,oneof=true false"`
+		DestDir                   string    `form:"dest_dir" validate:"required"`
+		RetentionDays             int16     `form:"retention_days"`
+		MonthlyRetentionEnabled   string    `form:"monthly_retention_enabled" validate:"required,oneof=true false"`
+		OptDataOnly               string    `form:"opt_data_only" validate:"omitempty,oneof=true false"`
+		OptSchemaOnly             string    `form:"opt_schema_only" validate:"omitempty,oneof=true false"`
+		OptClean                  string    `form:"opt_clean" validate:"required,oneof=true false"`
+		OptIfExists               string    `form:"opt_if_exists" validate:"required,oneof=true false"`
+		OptCreate                 string    `form:"opt_create" validate:"required,oneof=true false"`
+		OptNoComments             string    `form:"opt_no_comments" validate:"required,oneof=true false"`
+		OptSerializableDeferrable string    `form:"opt_serializable_deferrable" validate:"omitempty,oneof=true false"`
+		ParallelDumpEnabled       string    `form:"parallel_dump_enabled" validate:"required,oneof=true false"`
+		Tag                       string    `form:"tag" validate:"omitempty,max=63"`
 	}
 	if err := c.Bind(&formData); err != nil {
 		return respondhtmx.ToastError(c, err.Error())
@@ -54,26 +57,34 @@ func (h *handlers) createBackupHandler(c echo.Context) error {
 		return respondhtmx.ToastError(c, err.Error())
 	}
 
+	tag := formData.Tag
+	if tag == "" {
+		tag = "default"
+	}
+
 	_, err := h.servs.BackupsService.CreateBackup(
 		ctx, dbgen.BackupsServiceCreateBackupParams{
 			DatabaseID: formData.DatabaseID,
 			DestinationID: uuid.NullUUID{
 				Valid: formData.IsLocal == "false", UUID: formData.DestinationID,
 			},
-			IsLocal:        formData.IsLocal == "true",
-			Name:           formData.Name,
-			CronExpression: formData.CronExpression,
-			TimeZone:       formData.TimeZone,
-			IsActive:       formData.IsActive == "true",
-			DestDir:        formData.DestDir,
-			RetentionDays:  formData.RetentionDays,
-			OptDataOnly:    formData.OptDataOnly == "true",
-			OptSchemaOnly:  formData.OptSchemaOnly == "true",
-			OptClean:       formData.OptClean == "true",
-			OptIfExists:    formData.OptIfExists == "true",
-			OptCreate:      formData.OptCreate == "true",
+			IsLocal:                   formData.IsLocal == "true",
+			Name:                      formData.Name,
+			CronExpression:            formData.CronExpression,
+			TimeZone:                  formData.TimeZone,
+			IsActive:                  formData.IsActive == "true",
+			DestDir:                   formData.DestDir,
+			RetentionDays:             formData.RetentionDays,
+			MonthlyRetentionEnabled:   formData.MonthlyRetentionEnabled == "true",
+			OptDataOnly:               formData.OptDataOnly == "true",
+			OptSchemaOnly:             formData.OptSchemaOnly == "true",
+			OptClean:                  formData.OptClean == "true",
+			OptIfExists:               formData.OptIfExists == "true",
+			OptCreate:                 formData.OptCreate == "true",
 			OptNoComments:             formData.OptNoComments == "true",
 			OptSerializableDeferrable: formData.OptSerializableDeferrable == "true",
+			ParallelDumpEnabled:       formData.ParallelDumpEnabled == "true",
+			Tag:                       tag,
 		},
 	)
 	if err != nil {
@@ -121,6 +132,7 @@ func createBackupForm(
 
 		alpine.XData(`{
 			is_local: "false",
+			parallel_dump: "false",
 		}`),
 
 		component.InputControl(component.InputControlParams{
@@ -234,6 +246,35 @@ func createBackupForm(
 		}),
 
 		component.SelectControl(component.SelectControlParams{
+			Name:               "monthly_retention_enabled",
+			Label:              "Keep monthly backups",
+			Required:           true,
+			HelpButtonChildren: monthlyRetentionHelp(),
+			Children: []nodx.Node{
+				yesNoOptions(),
+			},
+		}),
+
+		component.SelectControl(component.SelectControlParams{
+			Name:               "parallel_dump_enabled",
+			Label:              "Parallel dump",
+			Required:           true,
+			HelpButtonChildren: parallelDumpHelp(),
+			Children: []nodx.Node{
+				alpine.XModel("parallel_dump"),
+				yesNoOptions(),
+			},
+		}),
+
+		component.InputControl(component.InputControlParams{
+			Name:        "tag",
+			Label:       "Worker tag",
+			Placeholder: "default",
+			Type:        component.InputTypeText,
+			HelpText:    "Only workers configured with a matching PBW_WORKER_TAGS entry claim this backup. Empty = \"default\"",
+		}),
+
+		component.SelectControl(component.SelectControlParams{
 			Name:     "is_active",
 			Label:    "Activate backup",
 			Required: true,
@@ -258,19 +299,19 @@ func createBackupForm(
 				nodx.Class("mt-2 grid grid-cols-2 gap-2"),
 
 				component.SelectControl(component.SelectControlParams{
-					Name:     "opt_data_only",
-					Label:    "--data-only",
-					Required: true,
+					Name:  "opt_data_only",
+					Label: "--data-only",
 					Children: []nodx.Node{
+						parallelDumpDisables(),
 						yesNoOptions(),
 					},
 				}),
 
 				component.SelectControl(component.SelectControlParams{
-					Name:     "opt_schema_only",
-					Label:    "--schema-only",
-					Required: true,
+					Name:  "opt_schema_only",
+					Label: "--schema-only",
 					Children: []nodx.Node{
+						parallelDumpDisables(),
 						yesNoOptions(),
 					},
 				}),
@@ -312,10 +353,10 @@ func createBackupForm(
 				}),
 
 				component.SelectControl(component.SelectControlParams{
-					Name:     "opt_serializable_deferrable",
-					Label:    "--serializable-deferrable",
-					Required: true,
+					Name:  "opt_serializable_deferrable",
+					Label: "--serializable-deferrable",
 					Children: []nodx.Node{
+						parallelDumpDisables(),
 						yesNoOptions(),
 					},
 					HelpButtonChildren: serializableDeferrableHelp(),

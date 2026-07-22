@@ -15,6 +15,9 @@ func (s *Service) CreateDatabase(
 	}
 
 	params.EncryptionKey = s.env.PBW_ENCRYPTION_KEY
+	if params.Tag == "" {
+		params.Tag = "default"
+	}
 	db, err := s.dbgen.DatabasesServiceCreateDatabase(ctx, params)
 
 	_ = s.TestDatabaseAndStoreResult(ctx, db.ID)

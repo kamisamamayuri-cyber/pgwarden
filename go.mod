@@ -1,6 +1,6 @@
 module github.com/kamisamamayuri-cyber/pgwarden
 
-go 1.23.5
+go 1.24
 
 require (
 	github.com/adhocore/gronx v1.8.1
@@ -51,6 +51,7 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
+	github.com/klauspost/compress v1.19.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

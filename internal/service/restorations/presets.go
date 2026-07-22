@@ -18,6 +18,7 @@ type RestoreEndpoint struct {
 type RestoreTarget struct {
 	Environment string `json:"environment"`
 	RestoreEndpoint
+	Tag string `json:"tag,omitempty" yaml:"tag,omitempty"`
 }
 
 // RestorePresetRBAC maps Keycloak/AD groups to preset permissions.
@@ -31,7 +32,7 @@ type RestorePreset struct {
 	ID          string            `json:"id"`
 	Title       string            `json:"title"`
 	Description string            `json:"description,omitempty"`
-	RBAC        RestorePresetRBAC   `json:"rbac,omitempty" yaml:"rbac"`
+	RBAC        RestorePresetRBAC `json:"rbac,omitempty" yaml:"rbac"`
 	Source      RestoreEndpoint   `json:"source"`
 	Targets     []RestoreTarget   `json:"targets"`
 }

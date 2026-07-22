@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
-	nodx "github.com/nodxdev/nodxgo"
-	htmx "github.com/nodxdev/nodxgo-htmx"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	discoveryservice "github.com/kamisamamayuri-cyber/pgwarden/internal/service/discovery"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/timeutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/component"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/respondhtmx"
+	"github.com/labstack/echo/v4"
+	nodx "github.com/nodxdev/nodxgo"
+	htmx "github.com/nodxdev/nodxgo-htmx"
 )
 
 type listQueryData struct {
@@ -50,17 +50,28 @@ func (h *handlers) runEventsHandler(c echo.Context, reportOnly bool) error {
 		return respondhtmx.ToastError(c, err.Error())
 	}
 
-	return echoutil.RenderNodx(c, http.StatusOK, renderRunEvents(runID, events, !reportOnly))
+	poll := !reportOnly
+
+	if c.Request().Header.Get("HX-Target") == tbodyID(runID) {
+		return echoutil.RenderNodx(c, http.StatusOK, listEventRows(events))
+	}
+
+	return echoutil.RenderNodx(c, http.StatusOK, renderRunEvents(runID, events, poll))
+}
+
+func tbodyID(runID uuid.UUID) string {
+	return "discovery-run-events-tbody-" + runID.String()
 }
 
 func renderRunEvents(runID uuid.UUID, events []dbgen.DiscoveryEvent, poll bool) nodx.Node {
 	contentID := "discovery-run-events-" + runID.String()
-	nodes := []nodx.Node{
+	return nodx.Div(
 		nodx.Id(contentID),
-		nodx.Class("overflow-x-auto"),
+		nodx.Class("overflow-auto max-h-[65dvh]"),
 		nodx.Table(
 			nodx.Class("table text-nowrap"),
 			nodx.Thead(
+				nodx.Class("sticky top-0 z-[1] bg-base-200"),
 				nodx.Tr(
 					nodx.Th(component.SpanText("Time")),
 					nodx.Th(component.SpanText("Level")),
@@ -71,17 +82,23 @@ func renderRunEvents(runID uuid.UUID, events []dbgen.DiscoveryEvent, poll bool) 
 					nodx.Th(component.SpanText("Message")),
 				),
 			),
-			nodx.Tbody(listEventRows(events)),
+			renderRunEventsTbody(runID, events, poll),
 		),
-	}
+	)
+}
+
+func renderRunEventsTbody(runID uuid.UUID, events []dbgen.DiscoveryEvent, poll bool) nodx.Node {
+	nodes := []nodx.Node{nodx.Id(tbodyID(runID))}
 	if poll && runIsRunning(events) {
-		nodes = append([]nodx.Node{
+		nodes = append(nodes,
 			htmx.HxGet(buildRunDetailsURL(runID.String())),
 			htmx.HxTrigger("every 3s"),
-			htmx.HxSwap("outerHTML"),
-		}, nodes...)
+			htmx.HxTarget("this"),
+			htmx.HxSwap("innerHTML"),
+		)
 	}
-	return nodx.Div(nodes...)
+	nodes = append(nodes, listEventRows(events))
+	return nodx.Tbody(nodes...)
 }
 
 func listEventRows(events []dbgen.DiscoveryEvent) nodx.Node {
@@ -156,9 +173,12 @@ func paginateParamsFromQuery(q listQueryData) discoveryservice.PaginateEventsPar
 
 func discoveryLevelBadge(level string) nodx.Node {
 	class := "badge badge-sm "
-	if level == "error" {
+	switch level {
+	case "error":
 		class += "badge-error"
-	} else {
+	case "warn":
+		class += "badge-warning"
+	default:
 		class += "badge-info"
 	}
 	return nodx.SpanEl(nodx.Class(class), nodx.Text(level))

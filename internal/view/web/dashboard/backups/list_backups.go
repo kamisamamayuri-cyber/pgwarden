@@ -6,6 +6,7 @@ import (
 
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/backups"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/executions"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/rbac"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/paginateutil"
@@ -51,39 +52,34 @@ func (h *handlers) listBackupsHandler(c echo.Context) error {
 	}
 
 	return echoutil.RenderNodx(
-		c, http.StatusOK, listBackups(access, formData.Host, pagination, backups),
+		c, http.StatusOK,
+		listBackups(access, h.servs.ExecutionsService, formData.Host, pagination, backups),
 	)
 }
 
 func listBackups(
 	access rbac.Access,
+	execs *executions.Service,
 	host string,
 	pagination paginateutil.PaginateResponse,
 	backups []dbgen.BackupsServicePaginateBackupsRow,
 ) nodx.Node {
 	if len(backups) < 1 {
-		return component.EmptyResultsTr(component.EmptyResultsParams{
+		return component.EmptyResults(component.EmptyResultsParams{
 			Title:    "No backups found",
 			Subtitle: "Backups will appear here after they are added",
 		})
 	}
 
-	yesNoSpan := func(b bool) nodx.Node {
-		if b {
-			return component.SpanText(i18n.LabelYes)
-		}
-		return component.SpanText(i18n.LabelNo)
-	}
-
 	filterQuery := backupsFilterQuery{Host: host}
 
-	trs := []nodx.Node{}
+	cards := []nodx.Node{}
 	for _, backup := range backups {
 		menuItems := []nodx.Node{
 			component.OptionsDropdownA(
 				nodx.Class("btn btn-sm btn-ghost btn-square"),
 				nodx.Href(pathutil.BuildPath(
-					fmt.Sprintf("/dashboard/executions?backup=%s", backup.ID),
+					fmt.Sprintf("/dashboard/jobs?backup=%s", backup.ID),
 				)),
 				nodx.Target("_blank"),
 				lucide.List(),
@@ -108,54 +104,48 @@ func listBackups(
 			destCell = component.SpanText("S3")
 		}
 
-		trs = append(trs, nodx.Tr(
-			nodx.Td(component.OptionsDropdown(nodx.Group(menuItems...))),
-			nodx.Td(
-				nodx.Div(
-					nodx.Class("flex items-center space-x-2"),
-					component.IsActivePing(backup.IsActive),
-					component.SpanText(backup.Name),
-				),
-			),
-			nodx.Td(component.SpanText(backup.DatabaseName)),
-			nodx.Td(destCell),
-			nodx.Td(
-				nodx.Class("font-mono"),
-				nodx.Div(
-					nodx.Class("flex flex-col items-start text-xs"),
-					component.SpanText(backup.CronExpression),
-					component.SpanText(backup.TimeZone),
-				),
-			),
-			nodx.Td(
-				nodx.If(
-					backup.RetentionDays == 0,
-					lucide.Infinity(),
-				),
-				nodx.If(
-					backup.RetentionDays > 0,
-					component.SpanText(fmt.Sprintf("%d d.", backup.RetentionDays)),
-				),
-			),
-			nodx.Td(yesNoSpan(backup.OptDataOnly)),
-			nodx.Td(yesNoSpan(backup.OptSchemaOnly)),
-			nodx.Td(yesNoSpan(backup.OptClean)),
-			nodx.Td(yesNoSpan(backup.OptIfExists)),
-			nodx.Td(yesNoSpan(backup.OptCreate)),
-			nodx.Td(yesNoSpan(backup.OptNoComments)),
-			nodx.Td(component.SpanText(
-				backup.CreatedAt.Local().Format(timeutil.LayoutYYYYMMDDHHMMSSPretty),
-			)),
+		retention := nodx.Node(lucide.Infinity())
+		if backup.RetentionDays > 0 {
+			retention = component.SpanText(fmt.Sprintf("%d d.", backup.RetentionDays))
+		}
+
+		parallelLabel := "Parallel"
+		if backup.ParallelDumpEnabled {
+			parallelLabel = fmt.Sprintf("Parallel ×%d", execs.ResolveParallelDumpJobs(backup.ParallelDumpJobs))
+		}
+
+		cards = append(cards, component.ItemCard(
+			nil,
+			[]nodx.Node{
+				component.OptionsDropdown(nodx.Group(menuItems...)),
+				component.IsActivePing(backup.IsActive),
+				nodx.SpanEl(nodx.Class("font-semibold flex-1 truncate"), component.SpanText(backup.Name)),
+				component.ToggleBadge("Monthly", backup.MonthlyRetentionEnabled),
+				component.ToggleBadge(parallelLabel, backup.ParallelDumpEnabled),
+				nodx.If(backup.Tag != "default", component.ToggleBadge(backup.Tag, true)),
+			},
+			[]nodx.Node{
+				component.Stat("Database", component.SpanText(backup.DatabaseName)),
+				component.Stat("Destination", destCell),
+				component.Stat("Schedule", nodx.SpanEl(
+					nodx.Class("font-mono"),
+					component.SpanText(backup.CronExpression+" "+backup.TimeZone),
+				)),
+				component.Stat("Retention", retention),
+				component.Stat("Added", component.SpanText(
+					backup.CreatedAt.Local().Format(timeutil.LayoutYYYYMMDDHHMMSSPretty),
+				)),
+			},
 		))
 	}
 
 	if pagination.HasNextPage {
-		trs = append(trs, nodx.Tr(
+		cards = append(cards, nodx.Div(
 			htmx.HxGet(buildBackupsListURL(filterQuery, pagination.NextPage)),
 			htmx.HxTrigger("intersect once"),
 			htmx.HxSwap("afterend"),
 		))
 	}
 
-	return component.RenderableGroup(trs)
+	return component.RenderableGroup(cards)
 }

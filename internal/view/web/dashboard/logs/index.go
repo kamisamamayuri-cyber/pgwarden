@@ -123,6 +123,10 @@ func logRow(r auditlogs.LogRow) nodx.Node {
 		actionLabel = "Download dump"
 	case "run_restore":
 		actionLabel = "Run restore"
+	case "run_backup":
+		actionLabel = "Run backup"
+	case "fix_owner":
+		actionLabel = "Fix owner"
 	}
 
 	return nodx.Tr(

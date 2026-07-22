@@ -5,10 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/labstack/echo/v4"
-	nodx "github.com/nodxdev/nodxgo"
-	htmx "github.com/nodxdev/nodxgo-htmx"
-	lucide "github.com/nodxdev/nodxgo-lucide"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/paginateutil"
@@ -16,7 +12,15 @@ import (
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/validate"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/component"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/respondhtmx"
+	"github.com/labstack/echo/v4"
+	nodx "github.com/nodxdev/nodxgo"
+	htmx "github.com/nodxdev/nodxgo-htmx"
+	lucide "github.com/nodxdev/nodxgo-lucide"
 )
+
+const discoveryRunsPageSize = 30
+const discoveryRunsPollMaxRows = 300
+const htmxStopPollingStatus = 286
 
 func (h *handlers) listRunsHandler(c echo.Context) error {
 	var queryData listQueryData
@@ -34,15 +38,76 @@ func (h *handlers) listRunsHandler(c echo.Context) error {
 		Port:     queryData.Port,
 		Database: queryData.Database,
 	}
+
+	isPoll := c.QueryParam("poll") == "1"
+	params := paginateParamsFromQuery(queryData)
+	if isPoll {
+		rows, _ := strconv.Atoi(c.QueryParam("rows"))
+		params.Limit = pollLimit(rows, discoveryRunsPageSize, discoveryRunsPollMaxRows)
+	}
+
 	pagination, runs, err := h.servs.DiscoveryService.PaginateRuns(
 		c.Request().Context(),
-		paginateParamsFromQuery(queryData),
+		params,
 	)
 	if err != nil {
 		return respondhtmx.ToastError(c, err.Error())
 	}
 
-	return echoutil.RenderNodx(c, http.StatusOK, listRuns(q, pagination, runs))
+	if queryData.Page > 1 {
+		return echoutil.RenderNodx(c, http.StatusOK, listRuns(q, pagination, runs))
+	}
+
+	active, err := h.servs.DiscoveryService.Running(c.Request().Context())
+	if err != nil {
+		active = false
+	}
+
+	if isPoll {
+		pagination.NextPage = params.Limit/discoveryRunsPageSize + 1
+		status := http.StatusOK
+		if !active {
+			status = htmxStopPollingStatus
+		}
+		return echoutil.RenderNodx(c, status, buildRunRows(q, pagination, runs))
+	}
+
+	return echoutil.RenderNodx(c, http.StatusOK, nodx.Group(
+		renderDiscoveryRunsTbody(q, pagination, runs, active),
+		discoveryRunModalsOOB(runs),
+	))
+}
+
+func pollLimit(rows, pageSize, maxRows int) int {
+	if rows < pageSize {
+		return pageSize
+	}
+	if rows > maxRows {
+		rows = maxRows
+	}
+	return (rows + pageSize - 1) / pageSize * pageSize
+}
+
+const discoveryRunsTbodyID = "discovery-events"
+const discoveryRunModalsContainerID = "discovery-run-modals"
+
+func renderDiscoveryRunsTbody(
+	q filterQuery,
+	pagination paginateutil.PaginateResponse,
+	runs []dbgen.DiscoveryServicePaginateRunsRow,
+	poll bool,
+) nodx.Node {
+	attrs := []nodx.Node{nodx.Id(discoveryRunsTbodyID)}
+	if poll {
+		attrs = append(attrs,
+			htmx.HxGet(buildListPollURL(q, 1)),
+			htmx.HxTrigger("every 5s"),
+			htmx.HxSwap("innerHTML"),
+			nodx.Attr("hx-vals",
+				"js:{rows: document.querySelectorAll('#"+discoveryRunsTbodyID+" > div[data-row]').length}"),
+		)
+	}
+	return nodx.Div(append(attrs, buildRunRows(q, pagination, runs))...)
 }
 
 func listRuns(
@@ -50,30 +115,61 @@ func listRuns(
 	pagination paginateutil.PaginateResponse,
 	runs []dbgen.DiscoveryServicePaginateRunsRow,
 ) nodx.Node {
+	return component.RenderableGroup(
+		[]nodx.Node{
+			buildRunRows(q, pagination, runs),
+			discoveryRunModalsOOB(runs),
+		},
+	)
+}
+
+func discoveryRunModalsOOB(runs []dbgen.DiscoveryServicePaginateRunsRow) nodx.Node {
 	if len(runs) < 1 {
-		return component.EmptyResultsTr(component.EmptyResultsParams{
+		return nil
+	}
+
+	modals := make([]nodx.Node, 0, len(runs)*2)
+	for _, run := range runs {
+		lm, rm := discoveryRunModals(run)
+		modals = append(modals, lm, rm)
+	}
+
+	return nodx.Div(
+		nodx.Id(discoveryRunModalsContainerID),
+		nodx.Attr("hx-swap-oob", "beforeend"),
+		nodx.Group(modals...),
+	)
+}
+
+func buildRunRows(
+	q filterQuery,
+	pagination paginateutil.PaginateResponse,
+	runs []dbgen.DiscoveryServicePaginateRunsRow,
+) nodx.Node {
+	if len(runs) < 1 {
+		return component.EmptyResults(component.EmptyResultsParams{
 			Title:    "No discovery runs found",
 			Subtitle: "Discovery runs will appear here",
 		})
 	}
 
-	trs := make([]nodx.Node, 0, len(runs)+1)
+	cards := make([]nodx.Node, 0, len(runs)+1)
 	for _, run := range runs {
-		trs = append(trs, discoveryRunRow(run))
+		cards = append(cards, discoveryRunCard(run))
 	}
 
 	if pagination.HasNextPage {
-		trs = append(trs, nodx.Tr(
+		cards = append(cards, nodx.Div(
 			htmx.HxGet(buildListURL(q, pagination.NextPage)),
 			htmx.HxTrigger("intersect once"),
 			htmx.HxSwap("afterend"),
 		))
 	}
 
-	return component.RenderableGroup(trs)
+	return component.RenderableGroup(cards)
 }
 
-func discoveryRunRow(run dbgen.DiscoveryServicePaginateRunsRow) nodx.Node {
+func discoveryRunCard(run dbgen.DiscoveryServicePaginateRunsRow) nodx.Node {
 	status := "running"
 	switch {
 	case run.Finished && run.ErrorsCount == 0:
@@ -84,25 +180,29 @@ func discoveryRunRow(run dbgen.DiscoveryServicePaginateRunsRow) nodx.Node {
 		status = "failed"
 	}
 
-	return nodx.Tr(
-		nodx.Td(discoveryRunActions(run)),
-		nodx.Td(component.SpanText(
-			discoveryRunTime(run.StartedAt),
-		)),
-		nodx.Td(component.StatusBadge(status)),
-		nodx.Td(component.SpanText(int32Text(run.PortsCount))),
-		nodx.Td(component.SpanText(int32Text(run.DatabasesCount))),
-		nodx.Td(component.SpanText(int32Text(run.DatabasesCreatedCount))),
-		nodx.Td(component.SpanText(int32Text(run.BackupsCreatedCount))),
-		nodx.Td(component.SpanText(int32Text(run.SkippedExistingCount))),
-		nodx.Td(component.SpanText(int32Text(run.ErrorsCount))),
-		nodx.Td(component.SpanText(
-			discoveryRunTime(run.UpdatedAt),
-		)),
+	return component.ItemCard(
+		[]nodx.Node{nodx.Data("row", "1")},
+		[]nodx.Node{
+			discoveryRunActions(run),
+			component.StatusBadge(status),
+			nodx.SpanEl(
+				nodx.Class("font-semibold flex-1 truncate"),
+				component.SpanText("Discovery run — "+discoveryRunTime(run.StartedAt)),
+			),
+		},
+		[]nodx.Node{
+			component.Stat("Ports scanned", component.SpanText(int32Text(run.PortsCount))),
+			component.Stat("Databases found", component.SpanText(int32Text(run.DatabasesCount))),
+			component.Stat("Created", component.SpanText(int32Text(run.DatabasesCreatedCount))),
+			component.Stat("Backups created", component.SpanText(int32Text(run.BackupsCreatedCount))),
+			component.Stat("Skipped", component.SpanText(int32Text(run.SkippedExistingCount))),
+			component.Stat("Errors", component.SpanText(int32Text(run.ErrorsCount))),
+			component.Stat("Updated", component.SpanText(discoveryRunTime(run.UpdatedAt))),
+		},
 	)
 }
 
-func discoveryRunActions(run dbgen.DiscoveryServicePaginateRunsRow) nodx.Node {
+func discoveryRunModals(run dbgen.DiscoveryServicePaginateRunsRow) (nodx.Node, nodx.Node) {
 	runID := run.RunID.String()
 	logModalID := "discovery-run-log-" + runID
 	reportModalID := "discovery-run-report-" + runID
@@ -134,15 +234,24 @@ func discoveryRunActions(run dbgen.DiscoveryServicePaginateRunsRow) nodx.Node {
 		},
 	})
 
+	return logModal.HTML, reportModal.HTML
+}
+
+func discoveryRunActions(run dbgen.DiscoveryServicePaginateRunsRow) nodx.Node {
+	runID := run.RunID.String()
+	logModalID := "discovery-run-log-" + runID
+	reportModalID := "discovery-run-report-" + runID
+
+	logOpenerAttr := component.Modal(component.ModalParams{ID: logModalID}).OpenerAttr
+	reportOpenerAttr := component.Modal(component.ModalParams{ID: reportModalID}).OpenerAttr
+
 	return nodx.Div(
 		nodx.Class("flex gap-1"),
-		logModal.HTML,
-		reportModal.HTML,
 		nodx.Div(
 			nodx.Class("tooltip"),
 			nodx.Data("tip", "Log"),
 			nodx.Button(
-				logModal.OpenerAttr,
+				logOpenerAttr,
 				nodx.Class("btn btn-square btn-sm btn-ghost"),
 				lucide.Eye(),
 			),
@@ -151,7 +260,7 @@ func discoveryRunActions(run dbgen.DiscoveryServicePaginateRunsRow) nodx.Node {
 			nodx.Class("tooltip"),
 			nodx.Data("tip", "Report"),
 			nodx.Button(
-				reportModal.OpenerAttr,
+				reportOpenerAttr,
 				nodx.Class("btn btn-square btn-sm btn-ghost"),
 				lucide.FileText(),
 			),

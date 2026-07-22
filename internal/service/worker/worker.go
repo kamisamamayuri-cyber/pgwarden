@@ -28,6 +28,7 @@ const (
 type Worker struct {
 	name              string
 	concurrency       int
+	tags              []string
 	executionsService *executions.Service
 	restorationsSvc   *restorations.Service
 }
@@ -35,15 +36,20 @@ type Worker struct {
 func New(
 	name string,
 	concurrency int,
+	tags []string,
 	executionsService *executions.Service,
 	restorationsSvc *restorations.Service,
 ) *Worker {
 	if concurrency < 1 {
 		concurrency = 1
 	}
+	if len(tags) == 0 {
+		tags = []string{"default"}
+	}
 	return &Worker{
 		name:              name,
 		concurrency:       concurrency,
+		tags:              tags,
 		executionsService: executionsService,
 		restorationsSvc:   restorationsSvc,
 	}
@@ -100,7 +106,7 @@ func (w *Worker) claimLoop(ctx context.Context) {
 }
 
 func (w *Worker) claimAndRunExecution(ctx context.Context) bool {
-	claim, ok, err := w.executionsService.ClaimExecution(ctx, w.name)
+	claim, ok, err := w.executionsService.ClaimExecution(ctx, w.name, w.tags)
 	if err != nil {
 		if ctx.Err() == nil {
 			logger.Error("claim execution failed", logger.KV{"error": err.Error()})
@@ -128,7 +134,7 @@ func (w *Worker) claimAndRunExecution(ctx context.Context) bool {
 }
 
 func (w *Worker) claimAndRunRestoration(ctx context.Context) bool {
-	claim, ok, err := w.restorationsSvc.ClaimRestoration(ctx, w.name)
+	claim, ok, err := w.restorationsSvc.ClaimRestoration(ctx, w.name, w.tags)
 	if err != nil {
 		if ctx.Err() == nil {
 			logger.Error("claim restoration failed", logger.KV{"error": err.Error()})

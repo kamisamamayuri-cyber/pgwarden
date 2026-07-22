@@ -24,7 +24,7 @@ func TestRestoreFromLocalZip(t *testing.T) {
 	zipPath := writeTestBackupZip(t)
 	client := Client{}
 
-	if err := client.RestoreFromLocalZip(context.Background(), PG17, connString, zipPath, nil); err != nil {
+	if err := client.RestoreFromLocalZip(context.Background(), PG17, connString, zipPath, nil, 4); err != nil {
 		t.Fatalf("RestoreFromLocalZip: %v", err)
 	}
 }
@@ -39,7 +39,7 @@ func TestRestoreFromZipReaderAt(t *testing.T) {
 	}
 
 	readerAt := bytes.NewReader(data)
-	if err := restoreFromZipReaderAt(context.Background(), PG17, "invalid", readerAt, int64(len(data)), nil); err == nil {
+	if err := restoreFromZipReaderAt(context.Background(), PG17, "invalid", readerAt, int64(len(data)), nil, 4); err == nil {
 		t.Fatal("expected psql error for invalid conn string")
 	}
 }

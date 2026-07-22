@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -69,11 +70,13 @@ func main() {
 	// Every pod follows config edits made on other pods (presets, discovery).
 	go servs.ConfigFilesService.Watch(ctx, 30*time.Second)
 
+	workerTags := parseWorkerTags(env.PBW_WORKER_TAGS)
+
 	// Cron (backup schedule enqueues, discovery, housekeeping) lives with the
 	// workers: enqueues are deduplicated by the DB, so every worker pod may
 	// run it. Web pods serve HTTP only.
 	if role == "worker" || role == "all" {
-		initSchedule(cr, servs)
+		initSchedule(cr, servs, workerTags)
 	}
 
 	workerDone := make(chan struct{})
@@ -85,6 +88,7 @@ func main() {
 		wrk := worker.New(
 			hostname,
 			env.PBW_WORKER_CONCURRENCY,
+			workerTags,
 			servs.ExecutionsService,
 			servs.RestorationsService,
 		)
@@ -139,4 +143,14 @@ func main() {
 	case <-time.After(shutdownTimeout):
 		logger.Warn("worker jobs still running at shutdown deadline")
 	}
+}
+
+func parseWorkerTags(raw string) []string {
+	var tags []string
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			tags = append(tags, part)
+		}
+	}
+	return tags
 }

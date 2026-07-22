@@ -61,15 +61,9 @@ func dashboardAside(reqCtx reqctx.Ctx) nodx.Node {
 			false,
 		),
 		dashboardAsideItem(
-			lucide.List,
-			"Executions",
-			pathutil.BuildPath("/dashboard/executions"),
-			false,
-		),
-		dashboardAsideItem(
-			lucide.ArchiveRestore,
-			"Restorations",
-			pathutil.BuildPath("/dashboard/restorations"),
+			lucide.ClipboardList,
+			"Jobs",
+			pathutil.BuildPath("/dashboard/jobs"),
 			false,
 		),
 	)

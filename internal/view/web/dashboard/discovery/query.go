@@ -26,6 +26,10 @@ func buildListURL(q filterQuery, page int) string {
 	return addFilterQuery(url, q)
 }
 
+func buildListPollURL(q filterQuery, page int) string {
+	return strutil.AddQueryParamToUrl(buildListURL(q, page), "poll", "1")
+}
+
 func buildRunURL(q filterQuery) string {
 	url := pathutil.BuildPath("/dashboard/discovery/run")
 	return addFilterQuery(url, q)

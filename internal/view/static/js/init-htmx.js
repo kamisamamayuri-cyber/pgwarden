@@ -47,7 +47,7 @@ export function initHTMX() {
 
   // Add trigger to use custom dialogs for confirms
   document.addEventListener("htmx:confirm", function (e) {
-    if (!e.detail.target.hasAttribute("hx-confirm")) return;
+    if (!e.detail.elt.hasAttribute("hx-confirm")) return;
 
     e.preventDefault();
     window.customConfirm(e.detail.question).then(function (result) {

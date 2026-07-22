@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/google/uuid"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 )
 
 // RestoreFile describes where the backup artifact for an execution is stored.
 type RestoreFile struct {
-	IsLocal  bool
-	Path     string
-	Bucket   string
-	Region   string
-	Endpoint string
+	IsLocal   bool
+	Path      string
+	Bucket    string
+	Region    string
+	Endpoint  string
 	AccessKey string
 	SecretKey string
 }

@@ -11,10 +11,10 @@ import (
 func dashboardHeader() nodx.Node {
 	return nodx.Header(
 		nodx.ClassMap{
-			"sticky top-0 z-50":                 true,
-			"space-x-4 p-4 min-w-max":           true,
+			"sticky top-0 z-50":       true,
+			"space-x-4 p-4 min-w-max": true,
 			"w-[full] bg-base-100 border-b border-base-300 shadow-sm": true,
-			"flex items-center justify-between": true,
+			"flex items-center justify-between":                       true,
 		},
 		nodx.Div(
 			nodx.Class("flex justify-start items-center space-x-2"),
@@ -25,6 +25,11 @@ func dashboardHeader() nodx.Node {
 		),
 		nodx.Div(
 			nodx.Class("flex justify-end items-center space-x-2"),
+			nodx.Div(
+				htmx.HxGet(pathutil.BuildPath("/dashboard/version-button")),
+				htmx.HxSwap("outerHTML"),
+				htmx.HxTrigger("load once"),
+			),
 			nodx.Div(
 				htmx.HxGet(pathutil.BuildPath("/dashboard/health-button")),
 				htmx.HxSwap("outerHTML"),

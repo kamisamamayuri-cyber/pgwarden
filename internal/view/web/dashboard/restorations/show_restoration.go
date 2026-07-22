@@ -8,7 +8,7 @@ import (
 	lucide "github.com/nodxdev/nodxgo-lucide"
 )
 
-func showRestorationButton(
+func restorationModalTemplate(
 	restoration dbgen.RestorationsServicePaginateRestorationsRow,
 ) nodx.Node {
 	view := restorationDetailsViewFromPaginate(restoration)
@@ -19,20 +19,22 @@ func showRestorationButton(
 		Size:          component.SizeMd,
 		HTMXIndicator: restorationDetailsLoadingID(restoration.ID),
 		Content: []nodx.Node{
-			renderRestorationDetails(view, view.Status == "running"),
+			renderRestorationDetails(view, view.Status == "running" || view.Status == "queued"),
 		},
 	})
+	return mo.HTML
+}
 
-	button := nodx.Button(
-		mo.OpenerAttr,
-		nodx.Class("btn btn-square btn-sm btn-ghost"),
+func showRestorationDropdownItem(
+	restoration dbgen.RestorationsServicePaginateRestorationsRow,
+) nodx.Node {
+	opener := component.Modal(component.ModalParams{
+		ID: restorationModalID(restoration.ID),
+	}).OpenerAttr
+
+	return component.OptionsDropdownButton(
+		opener,
 		lucide.Eye(),
-	)
-
-	return nodx.Div(
-		nodx.Class("inline-block tooltip tooltip-right"),
-		nodx.Data("tip", i18n.BtnShowDetails),
-		mo.HTML,
-		button,
+		component.SpanText(i18n.BtnShowDetails),
 	)
 }

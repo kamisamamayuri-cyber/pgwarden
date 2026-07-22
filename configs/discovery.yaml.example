@@ -31,6 +31,17 @@ defaults:
   cron_hour_to: 5
   cron_minute_step: 5
 
+  # Worker tag for new backups (PBW_WORKER_TAGS). Omit for "default".
+  # tag: default
+
+# Assign a worker tag to a whole batch of hosts by name, instead of adding
+# "tag:" to every host entry below. A host's own "tag:" (if set) wins over
+# this. Names not listed here fall back to defaults.tag ("default").
+host_tags:
+  west:
+    - db-west-01
+    - db-west-02
+
 # Hosts with streaming replica — pg_dump runs without --serializable-deferrable.
 hosts:
   - name: db-prod-01
@@ -42,6 +53,9 @@ hosts:
     clusters:                   # optional: skip port scan, use explicit ports
       - port: 5432
       - port: 16301
+  - name: db-west-01
+  - name: db-west-02
+    tag: east                   # per-host "tag:" overrides host_tags above
 
 # Hosts WITHOUT streaming replica — new backups get --serializable-deferrable
 # automatically to avoid AccessShareLock contention.

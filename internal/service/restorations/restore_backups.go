@@ -34,12 +34,12 @@ type RestoreBackupDownloadInfo struct {
 
 // RestoreBackupList is GET /api/v1/restores/:id/backups.
 type RestoreBackupList struct {
-	ID                 string                `json:"id"`
-	Title              string                `json:"title"`
-	Source             RestoreEndpoint       `json:"source"`
-	BackupsListRequest string                `json:"backups_list_request"`
-	RestoreListRequest string                `json:"restore_list_request"`
-	RestoreRequest     string                `json:"restore_request"`
+	ID                 string                  `json:"id"`
+	Title              string                  `json:"title"`
+	Source             RestoreEndpoint         `json:"source"`
+	BackupsListRequest string                  `json:"backups_list_request"`
+	RestoreListRequest string                  `json:"restore_list_request"`
+	RestoreRequest     string                  `json:"restore_request"`
 	Backups            []RestoreBackupListItem `json:"backups"`
 }
 

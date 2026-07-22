@@ -4,19 +4,19 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/labstack/echo/v4"
-	nodx "github.com/nodxdev/nodxgo"
-	htmx "github.com/nodxdev/nodxgo-htmx"
-	lucide "github.com/nodxdev/nodxgo-lucide"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/validate"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/reqctx"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/component"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/layout"
+	"github.com/labstack/echo/v4"
+	nodx "github.com/nodxdev/nodxgo"
+	htmx "github.com/nodxdev/nodxgo-htmx"
+	lucide "github.com/nodxdev/nodxgo-lucide"
 )
 
 type queryData struct {
-	Level    string `query:"level" validate:"omitempty,oneof=info error"`
+	Level    string `query:"level" validate:"omitempty,oneof=info warn error"`
 	Event    string `query:"event" validate:"omitempty,max=64"`
 	Host     string `query:"host" validate:"omitempty,max=253"`
 	Port     int    `query:"port" validate:"omitempty,min=1,max=65535"`
@@ -53,17 +53,9 @@ func indexPage(reqCtx reqctx.Ctx, queryData queryData) nodx.Node {
 					nodx.Class("btn btn-primary"),
 					htmx.HxPost(buildRunURL(filterQuery{})),
 					htmx.HxTarget("#discovery-events"),
-					htmx.HxSwap("innerHTML"),
+					htmx.HxSwap("outerHTML"),
 					lucide.Play(nodx.Class("size-4")),
 					nodx.Text("Run all"),
-				),
-				nodx.Button(
-					nodx.Class("btn btn-ghost"),
-					htmx.HxGet(buildListURL(q, 1)),
-					htmx.HxTarget("#discovery-events"),
-					htmx.HxSwap("innerHTML"),
-					lucide.RefreshCw(nodx.Class("size-4")),
-					nodx.Text("Refresh log"),
 				),
 			),
 		),
@@ -72,33 +64,15 @@ func indexPage(reqCtx reqctx.Ctx, queryData queryData) nodx.Node {
 			Children: []nodx.Node{
 				discoveryFilter(q),
 				nodx.Div(
-					nodx.Class("overflow-x-auto"),
-					nodx.Table(
-						nodx.Class("table text-nowrap"),
-						nodx.Thead(
-							nodx.Tr(
-								nodx.Th(nodx.Class("w-1")),
-								nodx.Th(component.SpanText("Start")),
-								nodx.Th(component.SpanText("Status")),
-								nodx.Th(component.SpanText("Ports")),
-								nodx.Th(component.SpanText("Databases")),
-								nodx.Th(component.SpanText("New DBs")),
-								nodx.Th(component.SpanText("New backups")),
-								nodx.Th(component.SpanText("Already existed")),
-								nodx.Th(component.SpanText("Errors")),
-								nodx.Th(component.SpanText("Updated")),
-							),
-						),
-						nodx.Tbody(
-							nodx.Id("discovery-events"),
-							component.SkeletonTr(7),
-							htmx.HxGet(buildListURL(q, 1)),
-							htmx.HxTrigger("load"),
-						),
-					),
+					nodx.Id(discoveryRunsTbodyID),
+					component.SkeletonCard(6),
+					htmx.HxGet(buildListURL(q, 1)),
+					htmx.HxTrigger("load"),
+					htmx.HxSwap("outerHTML"),
 				),
 			},
 		}),
+		nodx.Div(nodx.Id(discoveryRunModalsContainerID)),
 	}
 
 	return layout.Dashboard(reqCtx, layout.DashboardParams{
@@ -118,6 +92,7 @@ func discoveryFilter(q filterQuery) nodx.Node {
 		filterSelect("level", "Level", q.Level, []filterOption{
 			{Label: "All", Value: ""},
 			{Label: "Info", Value: "info"},
+			{Label: "Warn", Value: "warn"},
 			{Label: "Error", Value: "error"},
 		}),
 		filterInput("event", "Event", "backup_created", q.Event),

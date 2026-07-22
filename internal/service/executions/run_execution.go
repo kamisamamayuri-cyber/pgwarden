@@ -5,15 +5,18 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/integration/postgres"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/logger"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/logtail"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/progress"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/strutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/timeutil"
+	"github.com/lib/pq"
 )
 
 // EnqueueExecution puts a backup execution into the queue. A worker picks it
@@ -47,10 +50,13 @@ func (s *Service) EnqueueExecution(ctx context.Context, backupID uuid.UUID) erro
 // ClaimExecution atomically claims one queued execution for a worker.
 // Returns ok=false when the queue is empty.
 func (s *Service) ClaimExecution(
-	ctx context.Context, claimedBy string,
+	ctx context.Context, claimedBy string, tags []string,
 ) (dbgen.ExecutionsServiceClaimExecutionRow, bool, error) {
 	row, err := s.dbgen.ExecutionsServiceClaimExecution(
-		ctx, sql.NullString{Valid: true, String: claimedBy},
+		ctx, dbgen.ExecutionsServiceClaimExecutionParams{
+			ClaimedBy: sql.NullString{Valid: true, String: claimedBy},
+			Tags:      tags,
+		},
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, false, nil
@@ -76,6 +82,22 @@ func (s *Service) ReapStaleExecutions(
 	)
 }
 
+func parallelDumpUsable(back dbgen.ExecutionsServiceGetBackupDataRow) (bool, string) {
+	if !back.BackupParallelDumpEnabled {
+		return false, ""
+	}
+	if back.BackupOptSchemaOnly {
+		return false, "schema-only backup"
+	}
+	if back.BackupOptDataOnly {
+		return false, "data-only backup"
+	}
+	if back.BackupOptSerializableDeferrable {
+		return false, "serializable-deferrable is incompatible with snapshot export"
+	}
+	return true, ""
+}
+
 // RunClaimedExecution runs a backup execution that was already claimed
 // (status=running). The heartbeat is maintained by the caller (worker).
 func (s *Service) RunClaimedExecution(
@@ -98,7 +120,18 @@ func (s *Service) RunClaimedExecution(
 		})
 	}
 
+	logTail := logtail.New(func(lines []string) {
+		updateExec(dbgen.ExecutionsServiceUpdateExecutionParams{
+			ID: execID,
+			LogTail: sql.NullString{
+				Valid:  len(lines) > 0,
+				String: logtail.Join(lines),
+			},
+		})
+	})
+
 	failExec := func(execID uuid.UUID, origErr error, path string) error {
+		logTail.FlushNow()
 		logError(origErr)
 		p := dbgen.ExecutionsServiceUpdateExecutionParams{
 			ID:         execID,
@@ -155,18 +188,55 @@ func (s *Service) RunClaimedExecution(
 		return failExec(execID, err, "")
 	}
 
-	dumpReader := s.ints.PGClient.DumpZip(
-		ctx, pgVersion, back.DecryptedDatabaseConnectionString, postgres.DumpParams{
-			DataOnly:               back.BackupOptDataOnly,
-			SchemaOnly:             back.BackupOptSchemaOnly,
-			Clean:                  back.BackupOptClean,
-			IfExists:               back.BackupOptIfExists,
-			Create:                 back.BackupOptCreate,
-			NoComments:             back.BackupOptNoComments,
-			LockWaitTimeout:        s.env.PBW_DUMP_LOCK_WAIT_TIMEOUT,
-			SerializableDeferrable: back.BackupOptSerializableDeferrable,
-		},
-	)
+	dumpParams := postgres.DumpParams{
+		DataOnly:               back.BackupOptDataOnly,
+		SchemaOnly:             back.BackupOptSchemaOnly,
+		Clean:                  back.BackupOptClean,
+		IfExists:               back.BackupOptIfExists,
+		Create:                 back.BackupOptCreate,
+		NoComments:             back.BackupOptNoComments,
+		LockWaitTimeout:        s.env.PBW_DUMP_LOCK_WAIT_TIMEOUT,
+		SerializableDeferrable: back.BackupOptSerializableDeferrable,
+		CompressionLevel:       s.env.PBW_DUMP_COMPRESSION_LEVEL,
+	}
+
+	useParallel, reason := parallelDumpUsable(back)
+
+	var dumpReader io.Reader
+	if useParallel {
+		jobs := s.ResolveParallelDumpJobs(back.BackupParallelDumpJobs)
+
+		var perr error
+		dumpReader, perr = s.ints.PGClient.ParallelDumpZip(
+			ctx, pgVersion, back.DecryptedDatabaseConnectionString, logTail,
+			jobs, s.env.PBW_DUMP_COMPRESSION_LEVEL, dumpParams,
+		)
+		if errors.Is(perr, postgres.ErrParallelDumpUnsupported) {
+			useParallel = false
+			reason = perr.Error()
+		} else if perr != nil {
+			return failExec(execID, perr, "")
+		}
+	}
+
+	if !useParallel {
+		if back.BackupParallelDumpEnabled && reason != "" {
+			logger.Warn("parallel dump disabled for this run", logger.KV{
+				"backup_id": backupID.String(),
+				"reason":    reason,
+			})
+		}
+		dumpReader = s.ints.PGClient.DumpZip(
+			ctx, pgVersion, back.DecryptedDatabaseConnectionString, logTail, dumpParams,
+		)
+	}
+
+	progressReader := progress.NewReader(dumpReader, func(n int64) {
+		updateExec(dbgen.ExecutionsServiceUpdateExecutionParams{
+			ID:       execID,
+			FileSize: sql.NullInt64{Valid: true, Int64: n},
+		})
+	})
 
 	date := time.Now().Format(timeutil.LayoutSlashYYYYMMDD)
 	file := fmt.Sprintf(
@@ -178,7 +248,7 @@ func (s *Service) RunClaimedExecution(
 	fileSize := int64(0)
 
 	if back.BackupIsLocal {
-		fileSize, err = s.ints.StorageClient.LocalUpload(path, dumpReader)
+		fileSize, err = s.ints.StorageClient.LocalUpload(path, progressReader)
 		if err != nil {
 			return failExec(execID, err, path)
 		}
@@ -189,7 +259,7 @@ func (s *Service) RunClaimedExecution(
 			ctx,
 			back.DecryptedDestinationAccessKey, back.DecryptedDestinationSecretKey,
 			back.DestinationRegion.String, back.DestinationEndpoint.String,
-			back.DestinationBucketName.String, path, dumpReader,
+			back.DestinationBucketName.String, path, progressReader,
 		)
 		if err != nil {
 			return failExec(execID, err, path)
@@ -204,6 +274,7 @@ func (s *Service) RunClaimedExecution(
 		"path":          path,
 		"file_size":     fileSize,
 	})
+	logTail.FlushNow()
 	updateExec(dbgen.ExecutionsServiceUpdateExecutionParams{
 		ID:         execID,
 		Status:     sql.NullString{Valid: true, String: "success"},

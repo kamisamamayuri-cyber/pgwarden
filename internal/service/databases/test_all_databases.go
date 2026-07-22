@@ -2,12 +2,29 @@ package databases
 
 import (
 	"context"
+	"slices"
 
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/logger"
 	"golang.org/x/sync/errgroup"
 )
 
-func (s *Service) TestAllDatabases() {
+func filterByTags(
+	databases []dbgen.DatabasesServiceGetAllDatabasesRow, tags []string,
+) []dbgen.DatabasesServiceGetAllDatabasesRow {
+	if len(tags) == 0 {
+		return databases
+	}
+	out := make([]dbgen.DatabasesServiceGetAllDatabasesRow, 0, len(databases))
+	for _, db := range databases {
+		if slices.Contains(tags, db.Tag) {
+			out = append(out, db)
+		}
+	}
+	return out
+}
+
+func (s *Service) TestAllDatabases(tags []string) {
 	ctx := context.Background()
 
 	databases, err := s.GetAllDatabases(ctx)
@@ -17,6 +34,8 @@ func (s *Service) TestAllDatabases() {
 		)
 		return
 	}
+
+	databases = filterByTags(databases, tags)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(5)

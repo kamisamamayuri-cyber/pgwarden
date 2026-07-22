@@ -53,85 +53,75 @@ func listDestinations(
 	destinations []dbgen.DestinationsServicePaginateDestinationsRow,
 ) nodx.Node {
 	if len(destinations) < 1 {
-		return component.EmptyResultsTr(component.EmptyResultsParams{
+		return component.EmptyResults(component.EmptyResultsParams{
 			Title:    "No destinations found",
 			Subtitle: "Destinations will appear here after they are added",
 		})
 	}
 
-	trs := []nodx.Node{}
+	cards := []nodx.Node{}
 	for _, destination := range destinations {
-		trs = append(trs, nodx.Tr(
-			nodx.Td(component.OptionsDropdown(
-				component.OptionsDropdownA(
-					nodx.Href(pathutil.BuildPath(
-						fmt.Sprintf("/dashboard/executions?destination=%s", destination.ID),
-					)),
-					nodx.Target("_blank"),
-					lucide.List(),
-					component.SpanText(i18n.BtnShowTasks),
-				),
-				editDestinationButton(destination),
-				component.OptionsDropdownButton(
-					htmx.HxPost(pathutil.BuildPath(fmt.Sprintf("/dashboard/destinations/%s/test", destination.ID))),
-					htmx.HxDisabledELT("this"),
-					lucide.PlugZap(),
-					component.SpanText(i18n.BtnTestConnection),
-				),
-				deleteDestinationButton(destination.ID),
-			)),
-			nodx.Td(
-				nodx.Div(
-					nodx.Class("flex items-center space-x-2"),
-					component.HealthStatusPing(
-						destination.TestOk, destination.TestError, destination.LastTestAt,
+		cards = append(cards, component.ItemCard(
+			nil,
+			[]nodx.Node{
+				component.OptionsDropdown(
+					component.OptionsDropdownA(
+						nodx.Href(pathutil.BuildPath(
+							fmt.Sprintf("/dashboard/jobs?destination=%s", destination.ID),
+						)),
+						nodx.Target("_blank"),
+						lucide.List(),
+						component.SpanText(i18n.BtnShowTasks),
 					),
-					component.SpanText(destination.Name),
+					editDestinationButton(destination),
+					component.OptionsDropdownButton(
+						htmx.HxPost(pathutil.BuildPath(fmt.Sprintf("/dashboard/destinations/%s/test", destination.ID))),
+						htmx.HxDisabledELT("this"),
+						lucide.PlugZap(),
+						component.SpanText(i18n.BtnTestConnection),
+					),
+					deleteDestinationButton(destination.ID),
 				),
-			),
-			nodx.Td(
-				nodx.Div(
-					nodx.Class("flex items-center space-x-1"),
+				component.HealthStatusPing(
+					destination.TestOk, destination.TestError, destination.LastTestAt,
+				),
+				nodx.SpanEl(nodx.Class("font-semibold flex-1 truncate"), component.SpanText(destination.Name)),
+			},
+			[]nodx.Node{
+				component.Stat("Bucket", nodx.SpanEl(
+					nodx.Class("inline-flex items-center space-x-1"),
 					component.CopyButtonSm(destination.BucketName),
 					component.SpanText(destination.BucketName),
-				),
-			),
-			nodx.Td(
-				nodx.Div(
-					nodx.Class("flex items-center space-x-1"),
+				)),
+				component.Stat("Endpoint", nodx.SpanEl(
+					nodx.Class("inline-flex items-center space-x-1"),
 					component.CopyButtonSm(destination.Endpoint),
 					component.SpanText(destination.Endpoint),
-				),
-			),
-			nodx.Td(
-				nodx.Div(
-					nodx.Class("flex items-center space-x-1"),
+				)),
+				component.Stat("Region", nodx.SpanEl(
+					nodx.Class("inline-flex items-center space-x-1"),
 					component.CopyButtonSm(destination.Region),
 					component.SpanText(destination.Region),
-				),
-			),
-			nodx.Td(
-				nodx.Div(
-					nodx.Class("flex items-center space-x-1"),
+				)),
+				component.Stat("Access key", nodx.SpanEl(
+					nodx.Class("inline-flex items-center space-x-1"),
 					component.CopyButtonSm(destination.DecryptedAccessKey),
 					component.SpanText("**********"),
-				),
-			),
-			nodx.Td(
-				nodx.Div(
-					nodx.Class("flex items-center space-x-1"),
+				)),
+				component.Stat("Secret key", nodx.SpanEl(
+					nodx.Class("inline-flex items-center space-x-1"),
 					component.CopyButtonSm(destination.DecryptedSecretKey),
 					component.SpanText("**********"),
-				),
-			),
-			nodx.Td(component.SpanText(
-				destination.CreatedAt.Local().Format(timeutil.LayoutYYYYMMDDHHMMSSPretty),
-			)),
+				)),
+				component.Stat("Added", component.SpanText(
+					destination.CreatedAt.Local().Format(timeutil.LayoutYYYYMMDDHHMMSSPretty),
+				)),
+			},
 		))
 	}
 
 	if pagination.HasNextPage {
-		trs = append(trs, nodx.Tr(
+		cards = append(cards, nodx.Div(
 			htmx.HxGet(pathutil.BuildPath(fmt.Sprintf(
 				"/dashboard/destinations/list?page=%d", pagination.NextPage,
 			))),
@@ -140,5 +130,5 @@ func listDestinations(
 		))
 	}
 
-	return component.RenderableGroup(trs)
+	return component.RenderableGroup(cards)
 }

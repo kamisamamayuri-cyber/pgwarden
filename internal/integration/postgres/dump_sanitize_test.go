@@ -90,3 +90,52 @@ func TestShouldSkipDumpLine(t *testing.T) {
 		t.Fatal("lines inside COPY data must not be skipped")
 	}
 }
+
+func TestSanitizeDumpReaderStripsRoleStatements(t *testing.T) {
+	in := strings.Join([]string{
+		`CREATE SCHEMA egrn;`,
+		`ALTER SCHEMA egrn OWNER TO landbank_super;`,
+		`CREATE TABLE public.t (a int);`,
+		`ALTER TABLE public.t OWNER TO landbank_super;`,
+		`ALTER FUNCTION public.f(integer, text) OWNER TO landbank_super;`,
+		`GRANT ALL ON SCHEMA egrn TO some_role;`,
+		`REVOKE ALL ON SCHEMA public FROM PUBLIC;`,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE landbank_super IN SCHEMA egrn GRANT SELECT ON TABLES TO reader;`,
+		`COPY public.t (a) FROM stdin;`,
+		`GRANT ALL ON SCHEMA fake TO nobody;`,
+		`ALTER TABLE x OWNER TO y;`,
+		`\.`,
+		`SELECT pg_catalog.setval('public.seq', 42, true);`,
+		``,
+	}, "\n")
+
+	out, err := io.ReadAll(sanitizeDumpReader(strings.NewReader(in)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+
+	for _, banned := range []string{
+		"OWNER TO landbank_super",
+		"GRANT ALL ON SCHEMA egrn",
+		"REVOKE ALL ON SCHEMA public",
+		"ALTER DEFAULT PRIVILEGES FOR ROLE",
+	} {
+		if strings.Contains(got, banned) {
+			t.Errorf("expected %q to be stripped, output:\n%s", banned, got)
+		}
+	}
+
+	for _, kept := range []string{
+		"CREATE SCHEMA egrn;",
+		"CREATE TABLE public.t (a int);",
+		"COPY public.t (a) FROM stdin;",
+		"GRANT ALL ON SCHEMA fake TO nobody;",
+		"ALTER TABLE x OWNER TO y;",
+		"SELECT pg_catalog.setval('public.seq', 42, true);",
+	} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("expected %q to be kept, output:\n%s", kept, got)
+		}
+	}
+}

@@ -9,6 +9,7 @@ SET
       sqlc.narg('connection_string')::TEXT, sqlc.arg('encryption_key')::TEXT
     )
     ELSE connection_string
-  END
+  END,
+  tag = COALESCE(sqlc.narg('tag'), tag)
 WHERE id = @id
 RETURNING *;

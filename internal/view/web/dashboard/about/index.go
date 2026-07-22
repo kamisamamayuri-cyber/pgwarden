@@ -3,20 +3,22 @@ package about
 import (
 	"net/http"
 
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/versioncheck"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/reqctx"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/component"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/layout"
 	"github.com/labstack/echo/v4"
 	nodx "github.com/nodxdev/nodxgo"
+	lucide "github.com/nodxdev/nodxgo-lucide"
 )
 
 func (h *handlers) indexPageHandler(c echo.Context) error {
 	reqCtx := reqctx.GetCtx(c)
-	return echoutil.RenderNodx(c, http.StatusOK, indexPage(reqCtx))
+	return echoutil.RenderNodx(c, http.StatusOK, indexPage(reqCtx, h.servs.VersionCheckService))
 }
 
-func indexPage(reqCtx reqctx.Ctx) nodx.Node {
+func indexPage(reqCtx reqctx.Ctx, vc *versioncheck.Service) nodx.Node {
 	content := []nodx.Node{
 		component.H1Text("About"),
 
@@ -42,11 +44,28 @@ func indexPage(reqCtx reqctx.Ctx) nodx.Node {
 							nodx.Td(component.SpanText(component.AppName)),
 						),
 						nodx.Tr(
+							nodx.Th(component.SpanText("Version")),
+							nodx.Td(
+								nodx.Class("flex items-center gap-2"),
+								nodx.SpanEl(
+									nodx.Class("font-mono"),
+									nodx.Text(component.AppVersion),
+								),
+								nodx.If(vc.HasUpdate(), nodx.A(
+									nodx.Class("badge badge-info text-white gap-1"),
+									nodx.Href(component.RepoURL+"/releases/tag/"+vc.LatestVersion()),
+									nodx.Target("_blank"),
+									lucide.ExternalLink(nodx.Class("size-3")),
+									nodx.Text(vc.LatestVersion()+" available"),
+								)),
+							),
+						),
+						nodx.Tr(
 							nodx.Th(component.SpanText("License")),
 							nodx.Td(
 								nodx.A(
 									nodx.Class("link"),
-									nodx.Href(component.RepoURL + "/-/blob/master/LICENSE"),
+									nodx.Href(component.RepoURL+"/-/blob/master/LICENSE"),
 									nodx.Target("_blank"),
 									component.SpanText("AGPL v3 (upstream PG Warden)"),
 								),

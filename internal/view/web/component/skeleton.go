@@ -20,3 +20,14 @@ func SkeletonTr(rows int) nodx.Node {
 	return nodx.Group(rs...)
 
 }
+
+func SkeletonCard(cards int) nodx.Node {
+	cs := make([]nodx.Node, cards)
+	for i := range cs {
+		cs[i] = nodx.Div(
+			nodx.Class("animate-pulse h-16 w-full bg-base-300 rounded-lg mb-2"),
+		)
+	}
+
+	return nodx.Group(cs...)
+}

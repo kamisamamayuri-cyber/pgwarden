@@ -49,32 +49,9 @@ func indexPage(reqCtx reqctx.Ctx, queryData backupsQueryData) nodx.Node {
 			Children: []nodx.Node{
 				backupHostFilter(queryData.Host),
 				nodx.Div(
-					nodx.Class("overflow-x-auto"),
-					nodx.Table(
-						nodx.Class("table text-nowrap"),
-						nodx.Thead(
-							nodx.Tr(
-								nodx.Th(nodx.Class("w-1")),
-								nodx.Th(component.SpanText(i18n.LabelName)),
-								nodx.Th(component.SpanText(i18n.LabelDatabase)),
-								nodx.Th(component.SpanText(i18n.LabelDestination)),
-								nodx.Th(component.SpanText(i18n.LabelSchedule)),
-								nodx.Th(component.SpanText(i18n.LabelRetention)),
-								nodx.Th(component.SpanText("--data-only")),
-								nodx.Th(component.SpanText("--schema-only")),
-								nodx.Th(component.SpanText("--clean")),
-								nodx.Th(component.SpanText("--if-exists")),
-								nodx.Th(component.SpanText("--create")),
-								nodx.Th(component.SpanText("--no-comments")),
-								nodx.Th(component.SpanText(i18n.LabelCreatedAt)),
-							),
-						),
-						nodx.Tbody(
-							component.SkeletonTr(8),
-							htmx.HxGet(buildBackupsListURL(filterQuery, 1)),
-							htmx.HxTrigger("load"),
-						),
-					),
+					component.SkeletonCard(6),
+					htmx.HxGet(buildBackupsListURL(filterQuery, 1)),
+					htmx.HxTrigger("load"),
 				),
 			},
 		}),

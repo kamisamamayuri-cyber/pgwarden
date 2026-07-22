@@ -8,6 +8,7 @@ import (
 	"io"
 	"os/exec"
 
+	"github.com/klauspost/compress/flate"
 	"github.com/orsinium-labs/enum"
 )
 
@@ -153,12 +154,18 @@ type DumpParams struct {
 	// locks and does not block concurrent writes. Recommended for primaries
 	// without a streaming replica where AccessShareLock contention is a concern.
 	SerializableDeferrable bool
+
+	// CompressionLevel is the DEFLATE level for the dump zip (1-9).
+	// Zero falls back to defaultDumpCompressionLevel.
+	CompressionLevel int
 }
+
+const defaultDumpCompressionLevel = 3
 
 // Dump runs the pg_dump command with the given parameters. It returns the SQL
 // dump as an io.Reader. Cancelling ctx kills the pg_dump process.
 func (Client) Dump(
-	ctx context.Context, version PGVersion, connString string, params ...DumpParams,
+	ctx context.Context, version PGVersion, connString string, log io.Writer, params ...DumpParams,
 ) io.Reader {
 	pickedParams := DumpParams{}
 	if len(params) > 0 {
@@ -190,12 +197,20 @@ func (Client) Dump(
 	if pickedParams.SerializableDeferrable {
 		args = append(args, "--serializable-deferrable")
 	}
+	if log != nil {
+		args = append(args, "--verbose")
+	}
 
 	errorBuffer := &bytes.Buffer{}
+	var stderr io.Writer = errorBuffer
+	if log != nil {
+		stderr = io.MultiWriter(errorBuffer, log)
+	}
+
 	reader, writer := io.Pipe()
 	cmd := exec.CommandContext(ctx, version.Value.PGDump, args...)
 	cmd.Stdout = writer
-	cmd.Stderr = errorBuffer
+	cmd.Stderr = stderr
 
 	go func() {
 		defer writer.Close()
@@ -213,9 +228,14 @@ func (Client) Dump(
 // DumpZip runs the pg_dump command with the given parameters and returns the
 // ZIP-compressed SQL dump as an io.Reader.
 func (c *Client) DumpZip(
-	ctx context.Context, version PGVersion, connString string, params ...DumpParams,
+	ctx context.Context, version PGVersion, connString string, log io.Writer, params ...DumpParams,
 ) io.Reader {
-	dumpReader := c.Dump(ctx, version, connString, params...)
+	level := defaultDumpCompressionLevel
+	if len(params) > 0 && params[0].CompressionLevel != 0 {
+		level = params[0].CompressionLevel
+	}
+
+	dumpReader := c.Dump(ctx, version, connString, log, params...)
 	reader, writer := io.Pipe()
 
 	go func() {
@@ -223,6 +243,10 @@ func (c *Client) DumpZip(
 
 		zipWriter := zip.NewWriter(writer)
 		defer zipWriter.Close()
+
+		zipWriter.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
+			return flate.NewWriter(out, level)
+		})
 
 		fileWriter, err := zipWriter.Create("dump.sql")
 		if err != nil {

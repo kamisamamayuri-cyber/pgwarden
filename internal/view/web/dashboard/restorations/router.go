@@ -19,12 +19,12 @@ func MountRouter(
 ) {
 	h := newHandlers(servs)
 
-	parent.GET("", h.indexPageHandler)
-	parent.GET("/list", h.listRestorationsHandler)
 	parent.GET("/:restorationID/details", h.restorationDetailsHandler)
 
+	parent.GET("/wizard/step0", h.wizardStep0Handler)
 	parent.GET("/wizard/step1", h.wizardStep1Handler)
 	parent.GET("/wizard/step2", h.wizardStep2Handler)
 	parent.GET("/wizard/step3", h.wizardStep3Handler)
 	parent.POST("/wizard/run", h.wizardRunHandler)
+	parent.POST("/wizard/fix-owner", h.wizardFixOwnerHandler)
 }

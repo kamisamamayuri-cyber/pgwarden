@@ -21,8 +21,9 @@ func (s *Service) SoftDeleteExpiredExecutions() {
 
 	expiredExecutions, err := s.dbgen.ExecutionsServiceGetExpiredExecutions(
 		ctx, dbgen.ExecutionsServiceGetExpiredExecutionsParams{
-			DefaultRetentionDays: s.env.PBW_EXECUTION_RETENTION_DAYS,
-			BatchLimit:           executionHousekeepBatchLimit,
+			DefaultRetentionDays:          s.env.PBW_EXECUTION_RETENTION_DAYS,
+			DefaultMonthlyRetentionMonths: s.env.PBW_MONTHLY_RETENTION_MONTHS,
+			BatchLimit:                    executionHousekeepBatchLimit,
 		},
 	)
 	if err != nil {

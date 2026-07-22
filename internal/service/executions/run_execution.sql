@@ -11,6 +11,8 @@ SELECT
   backups.opt_create as backup_opt_create,	
   backups.opt_no_comments as backup_opt_no_comments,
   backups.opt_serializable_deferrable as backup_opt_serializable_deferrable,
+  backups.parallel_dump_enabled as backup_parallel_dump_enabled,
+  backups.parallel_dump_jobs as backup_parallel_dump_jobs,
 
   databases.name as database_name,
   pgp_sym_decrypt(databases.connection_string, @encryption_key) AS decrypted_database_connection_string,

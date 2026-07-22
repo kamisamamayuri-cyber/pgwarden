@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/google/uuid"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/lib/pq"
 )
 
@@ -22,29 +22,30 @@ type RestoreStartParams struct {
 
 // RestoreStartResult is returned when a restore job is accepted.
 type RestoreStartResult struct {
-	RestorationID     uuid.UUID         `json:"restoration_id"`
-	ID                string            `json:"id"`
-	Environment       string            `json:"environment"`
-	Title             string            `json:"title"`
-	BackupMode        string            `json:"backup_mode"`
-	RestoreRequest    string            `json:"restore_request"`
-	ActionRequestBody map[string]string `json:"action_request_body,omitempty"`
-	ExecutionID       uuid.UUID         `json:"execution_id"`
-	BackupFinishedAt  time.Time         `json:"backup_finished_at"`
+	RestorationID      uuid.UUID         `json:"restoration_id"`
+	ID                 string            `json:"id"`
+	Environment        string            `json:"environment"`
+	Title              string            `json:"title"`
+	BackupMode         string            `json:"backup_mode"`
+	RestoreRequest     string            `json:"restore_request"`
+	ActionRequestBody  map[string]string `json:"action_request_body,omitempty"`
+	ExecutionID        uuid.UUID         `json:"execution_id"`
+	BackupFinishedAt   time.Time         `json:"backup_finished_at"`
 	TargetDatabaseID   *uuid.UUID        `json:"target_database_id,omitempty"`
 	TargetDatabaseName string            `json:"target_database_name,omitempty"`
 	Duration           string            `json:"duration,omitempty"`
-	Status            string            `json:"status"`
-	StatusRequest     string            `json:"status_request"`
-	Message           string            `json:"message"`
+	Status             string            `json:"status"`
+	StatusRequest      string            `json:"status_request"`
+	Message            string            `json:"message"`
 }
 
 var (
-	ErrRestoreActionNotReady       = errors.New("restore is not ready for this environment")
-	ErrRestoreBackupNotFound       = errors.New("backup not found for this database source")
-	ErrRestoreEnvironmentNotFound  = errors.New("restore environment not found")
-	ErrRestoreEnvironmentRequired  = errors.New("environment is required")
-	ErrRestoreAlreadyRunning       = errors.New("restore is already running for this target database")
+	ErrRestoreActionNotReady        = errors.New("restore is not ready for this environment")
+	ErrRestoreBackupNotFound        = errors.New("backup not found for this database source")
+	ErrRestoreEnvironmentNotFound   = errors.New("restore environment not found")
+	ErrRestoreEnvironmentRequired   = errors.New("environment is required")
+	ErrRestoreAlreadyRunning        = errors.New("restore is already running for this target database")
+	ErrRestoreTargetPreflightFailed = errors.New("target preflight check failed")
 )
 
 func (s *Service) StartRestore(
@@ -99,6 +100,14 @@ func (s *Service) StartRestore(
 		return RestoreStartResult{}, fmt.Errorf("backup execution has no finished_at")
 	}
 
+	pgVersion, err := s.ints.PGClient.ParseVersion(execution.DatabasePgVersion)
+	if err != nil {
+		return RestoreStartResult{}, err
+	}
+	if err := s.ints.PGClient.PreflightTarget(ctx, pgVersion, targetConn.ConnString, target.Owner); err != nil {
+		return RestoreStartResult{}, fmt.Errorf("%w: %v", ErrRestoreTargetPreflightFailed, err)
+	}
+
 	title := restoreEnvironmentTitleLatest(preset, target)
 	resultBody := restoreRequestBody(environment, "")
 	if backupMode == backupModeDated {
@@ -106,8 +115,6 @@ func (s *Service) StartRestore(
 		resultBody = restoreRequestBody(environment, execution.ID.String())
 	}
 
-	// Queue the restore: a worker pod claims and executes it. The connection
-	// string travels encrypted in the restorations row, target options as JSON.
 	res, err := s.EnqueueRestoration(ctx, EnqueueRestorationParams{
 		ExecutionID:   execution.ID,
 		DatabaseID:    targetConn.DatabaseID,
@@ -117,6 +124,7 @@ func (s *Service) StartRestore(
 			DatabaseName: target.Database,
 			Owner:        target.Owner,
 		},
+		Tag: target.Tag,
 	})
 	if err != nil {
 		return RestoreStartResult{}, err
@@ -125,19 +133,19 @@ func (s *Service) StartRestore(
 	restorationID := res.ID
 
 	result := RestoreStartResult{
-		RestorationID:     restorationID,
-		ID:                preset.ID,
-		Environment:       environment,
-		Title:             title,
-		BackupMode:        backupMode,
-		RestoreRequest:    restorePostRequest(preset.ID),
-		ActionRequestBody: resultBody,
-		ExecutionID:       execution.ID,
+		RestorationID:      restorationID,
+		ID:                 preset.ID,
+		Environment:        environment,
+		Title:              title,
+		BackupMode:         backupMode,
+		RestoreRequest:     restorePostRequest(preset.ID),
+		ActionRequestBody:  resultBody,
+		ExecutionID:        execution.ID,
 		BackupFinishedAt:   execution.FinishedAt.Time,
 		TargetDatabaseName: target.PbwName,
-		Status:            res.Status,
-		StatusRequest:     restorationStatusRequest(restorationID),
-		Message:           "restore queued",
+		Status:             res.Status,
+		StatusRequest:      restorationStatusRequest(restorationID),
+		Message:            "restore queued",
 	}
 	result.Duration = RestorationDuration(res.StartedAt, sql.NullTime{})
 	if targetConn.DatabaseID.Valid {

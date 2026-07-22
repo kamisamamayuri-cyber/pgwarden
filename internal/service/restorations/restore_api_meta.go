@@ -13,7 +13,6 @@ const (
 	backupModeDated  = "dated"
 )
 
-
 func restoreEnvironmentTitleLatest(preset RestorePreset, target RestoreTarget) string {
 	return fmt.Sprintf(
 		"%s → %s (latest backup from prod)",
@@ -62,7 +61,6 @@ func restoreRequestBody(environment string, executionID string) map[string]strin
 	}
 	return body
 }
-
 
 func restoreRequestBodyWithFinishedAtDate(environment, finishedAt string) map[string]string {
 	return map[string]string{

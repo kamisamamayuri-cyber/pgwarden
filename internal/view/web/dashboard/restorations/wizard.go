@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/auditlogs"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/service/restorations"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/echoutil"
@@ -14,7 +15,6 @@ import (
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/reqctx"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/component"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/view/web/respondhtmx"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	nodx "github.com/nodxdev/nodxgo"
 	htmx "github.com/nodxdev/nodxgo-htmx"
@@ -22,13 +22,111 @@ import (
 )
 
 const wizardModalID = "new-restore-wizard"
+const wizardActionRestore = "restore"
+const wizardActionFixOwner = "fix_owner"
+
+// ── Step 0: select action ────────────────────────────────────────────────────
+
+func (h *handlers) wizardStep0Handler(c echo.Context) error {
+	return echoutil.RenderNodx(c, http.StatusOK, wizardStep0Content())
+}
+
+func wizardStep0Content() nodx.Node {
+	return nodx.FormEl(
+		nodx.Id("wizard-form"),
+		htmx.HxGet(pathutil.BuildPath("/dashboard/restorations/wizard/step1")),
+		htmx.HxTarget("#wizard-slot"),
+		htmx.HxSwap("innerHTML"),
+		htmx.HxInclude("#wizard-form"),
+
+		nodx.P(
+			nodx.Class("text-sm text-base-content/60 mb-3"),
+			nodx.Text("What do you want to do?"),
+		),
+
+		nodx.Div(
+			nodx.Class("grid grid-cols-2 gap-3 mb-4"),
+			wizardActionCard(
+				wizardActionRestore, "Run restore",
+				"Restore a database from a backup into a target environment. Overwrites the target.",
+				lucide.DatabaseBackup, true,
+			),
+			wizardActionCard(
+				wizardActionFixOwner, "Fix owner",
+				"Only reassign the target database's owner. No data is touched.",
+				lucide.UserCog, false,
+			),
+		),
+
+		wizardFooter(
+			nodx.Button(
+				nodx.Type("button"),
+				nodx.Class("btn btn-ghost btn-sm"),
+				nodx.Attr("onClick", fmt.Sprintf("window.dispatchEvent(new Event('%s_close'));", wizardModalID)),
+				nodx.Text("Cancel"),
+			),
+			nodx.Button(
+				nodx.Type("submit"),
+				nodx.Class("btn btn-primary btn-sm"),
+				nodx.Text("Next"),
+				lucide.ChevronRight(nodx.Class("size-4")),
+			),
+		),
+	)
+}
+
+func wizardActionCard(
+	value, title, desc string,
+	icon func(children ...nodx.Node) nodx.Node,
+	checked bool,
+) nodx.Node {
+	return nodx.LabelEl(
+		nodx.Class("flex items-start gap-3 p-4 rounded-lg border border-base-300 cursor-pointer hover:bg-base-300 has-[input:checked]:border-primary has-[input:checked]:bg-primary/5"),
+		nodx.Input(
+			nodx.Type("radio"),
+			nodx.Name("action"),
+			nodx.Value(value),
+			nodx.Class("radio radio-primary radio-sm mt-0.5 flex-shrink-0"),
+			nodx.If(checked, nodx.Attr("checked", "")),
+		),
+		nodx.Div(
+			nodx.Class("flex-1 min-w-0"),
+			nodx.Div(
+				nodx.Class("flex items-center gap-2 font-medium text-sm"),
+				icon(nodx.Class("size-4")),
+				nodx.Text(title),
+			),
+			nodx.Div(
+				nodx.Class("text-xs text-base-content/60 mt-1"),
+				nodx.Text(desc),
+			),
+		),
+	)
+}
 
 // ── Step 1: select preset ────────────────────────────────────────────────────
+
+type wizardStep1Query struct {
+	Action string `query:"action"`
+}
+
+func wizardNormalizeAction(action string) string {
+	if action == wizardActionFixOwner {
+		return wizardActionFixOwner
+	}
+	return wizardActionRestore
+}
 
 func (h *handlers) wizardStep1Handler(c echo.Context) error {
 	ctx := c.Request().Context()
 	access := reqctx.GetCtx(c).Access
 	rbacEnabled := h.servs.RbacService.Enabled()
+
+	var q wizardStep1Query
+	if err := c.Bind(&q); err != nil {
+		return respondhtmx.ToastError(c, err.Error())
+	}
+	action := wizardNormalizeAction(q.Action)
 
 	catalog, err := h.servs.RestorationsService.ListRestoreCatalog(ctx)
 	if err != nil {
@@ -43,10 +141,10 @@ func (h *handlers) wizardStep1Handler(c echo.Context) error {
 		}
 	}
 
-	return echoutil.RenderNodx(c, http.StatusOK, wizardStep1Content(presets))
+	return echoutil.RenderNodx(c, http.StatusOK, wizardStep1Content(action, presets))
 }
 
-func wizardStep1Content(presets []restorations.RestoreDatabaseInfo) nodx.Node {
+func wizardStep1Content(action string, presets []restorations.RestoreDatabaseInfo) nodx.Node {
 	if len(presets) == 0 {
 		return nodx.Div(
 			nodx.Class("py-8 text-center text-base-content/60"),
@@ -66,13 +164,15 @@ func wizardStep1Content(presets []restorations.RestoreDatabaseInfo) nodx.Node {
 		htmx.HxSwap("innerHTML"),
 		htmx.HxInclude("#wizard-form"),
 
+		nodx.Input(nodx.Type("hidden"), nodx.Name("action"), nodx.Value(action)),
+
 		nodx.P(
 			nodx.Class("text-sm text-base-content/60 mb-3"),
 			nodx.Text("Select the restore preset to use:"),
 		),
 
 		nodx.Div(
-			nodx.Class("space-y-2 mb-4"),
+			nodx.Class("space-y-2 mb-4 max-h-[45dvh] overflow-y-auto pr-1"),
 			nodx.Group(items...),
 		),
 
@@ -80,8 +180,11 @@ func wizardStep1Content(presets []restorations.RestoreDatabaseInfo) nodx.Node {
 			nodx.Button(
 				nodx.Type("button"),
 				nodx.Class("btn btn-ghost btn-sm"),
-				nodx.Attr("onClick", fmt.Sprintf("window.dispatchEvent(new Event('%s_close'));", wizardModalID)),
-				nodx.Text("Cancel"),
+				htmx.HxGet(pathutil.BuildPath("/dashboard/restorations/wizard/step0")),
+				htmx.HxTarget("#wizard-slot"),
+				htmx.HxSwap("innerHTML"),
+				lucide.ChevronLeft(nodx.Class("size-4")),
+				nodx.Text("Back"),
 			),
 			nodx.Button(
 				nodx.Type("submit"),
@@ -127,6 +230,7 @@ func wizardPresetItem(p restorations.RestoreDatabaseInfo, checked bool) nodx.Nod
 
 type wizardStep2Query struct {
 	PresetID string `query:"preset_id"`
+	Action   string `query:"action"`
 }
 
 func (h *handlers) wizardStep2Handler(c echo.Context) error {
@@ -144,6 +248,7 @@ func (h *handlers) wizardStep2Handler(c echo.Context) error {
 	if rbacEnabled && !access.CanViewPreset(q.PresetID) {
 		return respondhtmx.ToastError(c, "access denied")
 	}
+	action := wizardNormalizeAction(q.Action)
 
 	info, err := h.servs.RestorationsService.GetRestoreTargets(ctx, q.PresetID)
 	if err != nil {
@@ -154,92 +259,154 @@ func (h *handlers) wizardStep2Handler(c echo.Context) error {
 	}
 
 	canExecute := !rbacEnabled || access.CanExecutePreset(q.PresetID)
-	return echoutil.RenderNodx(c, http.StatusOK, wizardStep2Content(q.PresetID, info, canExecute))
+	return echoutil.RenderNodx(c, http.StatusOK, wizardStep2Content(action, q.PresetID, info, canExecute))
 }
 
 func wizardStep2Content(
-	presetID string,
+	action, presetID string,
 	info restorations.RestoreTargetsInfo,
 	canExecute bool,
 ) nodx.Node {
-	if len(info.Environments) == 0 {
+	isFixOwner := action == wizardActionFixOwner
+
+	environments := info.Environments
+	if isFixOwner {
+		filtered := make([]restorations.RestoreEnvironmentInfo, 0, len(environments))
+		for _, env := range environments {
+			if env.Target.Owner != "" {
+				filtered = append(filtered, env)
+			}
+		}
+		environments = filtered
+	}
+
+	if len(environments) == 0 {
+		msg := "No environments configured for this preset."
+		if isFixOwner {
+			msg = "No environments with a configured owner for this preset."
+		}
 		return nodx.Div(
 			nodx.Class("py-8 text-center text-base-content/60"),
-			nodx.Text("No environments configured for this preset."),
+			nodx.Text(msg),
 		)
 	}
 
-	items := make([]nodx.Node, 0, len(info.Environments))
-	for i, env := range info.Environments {
+	items := make([]nodx.Node, 0, len(environments))
+	for i, env := range environments {
 		items = append(items, wizardEnvItem(env, i == 0))
 	}
 
-	return nodx.FormEl(
-		nodx.Id("wizard-form"),
+	prompt := "Select the target environment to restore into:"
+	if isFixOwner {
+		prompt = "Select the environment whose owner needs fixing:"
+	}
+
+	backBtn := nodx.Button(
+		nodx.Type("button"),
+		nodx.Class("btn btn-ghost btn-sm"),
+		htmx.HxGet(pathutil.BuildPath("/dashboard/restorations/wizard/step1")),
+		htmx.HxTarget("#wizard-slot"),
+		htmx.HxSwap("innerHTML"),
+		lucide.ChevronLeft(nodx.Class("size-4")),
+		nodx.Text("Back"),
+	)
+
+	submitBtn := nodx.Button(
+		nodx.Type("submit"),
+		nodx.Class("btn btn-primary btn-sm"),
+		nodx.If(!canExecute, nodx.Attr("disabled", "")),
+		nodx.Text("Next"),
+		lucide.ChevronRight(nodx.Class("size-4")),
+	)
+	formAction := []nodx.Node{
 		htmx.HxGet(pathutil.BuildPath("/dashboard/restorations/wizard/step3")),
+	}
+	if isFixOwner {
+		submitBtn = nodx.Button(
+			nodx.Type("submit"),
+			nodx.Class("btn btn-warning btn-sm"),
+			nodx.If(!canExecute, nodx.Attr("disabled", "")),
+			lucide.UserCog(nodx.Class("size-4")),
+			nodx.Text("Fix owner"),
+		)
+		formAction = []nodx.Node{
+			htmx.HxPost(pathutil.BuildPath("/dashboard/restorations/wizard/fix-owner")),
+			htmx.HxConfirm("Reassign the target database's owner? This does not touch data, only ALTER ... OWNER TO."),
+		}
+	}
+
+	formAttrs := []nodx.Node{
+		nodx.Id("wizard-form"),
 		htmx.HxTarget("#wizard-slot"),
 		htmx.HxSwap("innerHTML"),
 		htmx.HxInclude("#wizard-form"),
 
 		nodx.Input(nodx.Type("hidden"), nodx.Name("preset_id"), nodx.Value(presetID)),
+		nodx.Input(nodx.Type("hidden"), nodx.Name("action"), nodx.Value(action)),
 
-		nodx.P(
-			nodx.Class("text-sm text-base-content/60 mb-3"),
-			nodx.Text("Select the target environment to restore into:"),
-		),
+		nodx.P(nodx.Class("text-sm text-base-content/60 mb-3"), nodx.Text(prompt)),
+	}
+	formAttrs = append(formAttrs, formAction...)
 
-		nodx.If(!canExecute, nodx.Div(
+	if isFixOwner {
+		formAttrs = append(formAttrs, nodx.Div(
 			nodx.Class("alert alert-warning text-sm mb-3"),
-			nodx.Text("You have view-only access to this preset and cannot launch restores."),
-		)),
+			nodx.Text(`Fix owner only runs "ALTER ... OWNER TO". No restore, no data changes.`),
+		))
+	}
+	if !canExecute {
+		formAttrs = append(formAttrs, nodx.Div(
+			nodx.Class("alert alert-warning text-sm mb-3"),
+			nodx.Text("You have view-only access to this preset and cannot launch this action."),
+		))
+	}
 
+	formAttrs = append(formAttrs,
 		nodx.Div(
-			nodx.Class("space-y-2 mb-4"),
+			nodx.Class("space-y-2 mb-4 max-h-[45dvh] overflow-y-auto overflow-x-hidden pr-1"),
 			nodx.Group(items...),
 		),
-
-		wizardFooter(
-			nodx.Button(
-				nodx.Type("button"),
-				nodx.Class("btn btn-ghost btn-sm"),
-				htmx.HxGet(pathutil.BuildPath("/dashboard/restorations/wizard/step1")),
-				htmx.HxTarget("#wizard-slot"),
-				htmx.HxSwap("innerHTML"),
-				lucide.ChevronLeft(nodx.Class("size-4")),
-				nodx.Text("Back"),
-			),
-			nodx.Button(
-				nodx.Type("submit"),
-				nodx.Class("btn btn-primary btn-sm"),
-				nodx.If(!canExecute, nodx.Attr("disabled", "")),
-				nodx.Text("Next"),
-				lucide.ChevronRight(nodx.Class("size-4")),
-			),
-		),
+		wizardFooter(backBtn, submitBtn),
 	)
+
+	return nodx.FormEl(formAttrs...)
+}
+
+func wizardIsProtectedEnvironment(environment string) bool {
+	return environment == "prod"
 }
 
 func wizardEnvItem(env restorations.RestoreEnvironmentInfo, checked bool) nodx.Node {
 	targetInfo := fmt.Sprintf("%s:%d / %s", env.Target.Host, env.Target.Port, env.Target.Database)
+	isProd := wizardIsProtectedEnvironment(env.Environment)
 
-	return nodx.LabelEl(
-		nodx.Class("flex items-start gap-3 p-3 rounded-lg border border-base-300 cursor-pointer hover:bg-base-300 has-[input:checked]:border-primary has-[input:checked]:bg-primary/5"),
-		nodx.Input(
-			nodx.Type("radio"),
-			nodx.Name("environment"),
-			nodx.Value(env.Environment),
-			nodx.Class("radio radio-primary radio-sm mt-0.5 flex-shrink-0"),
-			nodx.If(checked, nodx.Attr("checked", "")),
-		),
-		nodx.Div(
-			nodx.Class("flex-1 min-w-0"),
-			nodx.Div(
-				nodx.Class("font-medium text-sm capitalize"),
-				nodx.Text(env.Environment),
+	return nodx.Div(
+		nodx.ClassMap{
+			"flex items-center gap-3 p-3 rounded-lg border":                       true,
+			"has-[input:checked]:border-primary has-[input:checked]:bg-primary/5": true,
+			"border-warning/50": isProd,
+			"border-base-300":   !isProd,
+		},
+		nodx.LabelEl(
+			nodx.Class("flex-1 flex items-start gap-3 min-w-0 cursor-pointer"),
+			nodx.Input(
+				nodx.Type("radio"),
+				nodx.Name("environment"),
+				nodx.Value(env.Environment),
+				nodx.Class("radio radio-primary radio-sm mt-0.5 flex-shrink-0"),
+				nodx.If(checked, nodx.Attr("checked", "")),
 			),
 			nodx.Div(
-				nodx.Class("text-xs text-base-content/50 mt-1 font-mono"),
-				nodx.Text(targetInfo),
+				nodx.Class("flex-1 min-w-0"),
+				nodx.Div(
+					nodx.Class("font-medium text-sm flex items-center gap-1.5"),
+					nodx.Text(env.Environment),
+					nodx.If(isProd, lucide.ShieldAlert(nodx.Class("size-3.5 text-warning"))),
+				),
+				nodx.Div(
+					nodx.Class("text-xs text-base-content/50 mt-1 font-mono"),
+					nodx.Text(targetInfo),
+				),
 			),
 		),
 	)
@@ -334,16 +501,26 @@ func wizardStep3Content(
 		))
 	}
 
+	isProd := wizardIsProtectedEnvironment(environment)
+	confirmMsg := fmt.Sprintf(
+		"Restore into '%s'? This will overwrite the target database. Continue?",
+		environment,
+	)
+	if isProd {
+		confirmMsg = fmt.Sprintf(
+			"⚠ DANGER: this will DROP AND RECREATE the PRODUCTION database (environment: %s). "+
+				"All current data on the target will be permanently lost. This cannot be undone. Continue?",
+			environment,
+		)
+	}
+
 	return nodx.FormEl(
 		nodx.Id("wizard-form"),
 		htmx.HxPost(pathutil.BuildPath("/dashboard/restorations/wizard/run")),
 		htmx.HxTarget("#wizard-slot"),
 		htmx.HxSwap("innerHTML"),
 		htmx.HxInclude("#wizard-form"),
-		htmx.HxConfirm(fmt.Sprintf(
-			"Restore into '%s'? This will overwrite the target database. Continue?",
-			environment,
-		)),
+		htmx.HxConfirm(confirmMsg),
 
 		nodx.Input(nodx.Type("hidden"), nodx.Name("preset_id"), nodx.Value(presetID)),
 		nodx.Input(nodx.Type("hidden"), nodx.Name("environment"), nodx.Value(environment)),
@@ -352,6 +529,12 @@ func wizardStep3Content(
 			nodx.Class("text-sm text-base-content/60 mb-3"),
 			nodx.Text("Select the backup to restore from (latest is pre-selected):"),
 		),
+
+		nodx.If(isProd, nodx.Div(
+			nodx.Class("alert alert-error text-sm mb-3"),
+			lucide.ShieldAlert(nodx.Class("size-4 shrink-0")),
+			nodx.SpanEl(nodx.Text("Target environment is PROD. This restore will overwrite the production database.")),
+		)),
 
 		nodx.Div(
 			nodx.Class("alert alert-warning text-sm mb-3"),
@@ -476,6 +659,100 @@ func (h *handlers) wizardRunHandler(c echo.Context) error {
 	return echoutil.RenderNodx(c, http.StatusOK, wizardSuccessContent(result))
 }
 
+// ── Fix owner ────────────────────────────────────────────────────────────────
+
+type wizardFixOwnerForm struct {
+	PresetID    string `form:"preset_id"`
+	Environment string `form:"environment"`
+}
+
+func (h *handlers) wizardFixOwnerHandler(c echo.Context) error {
+	ctx := c.Request().Context()
+	access := reqctx.GetCtx(c).Access
+	rbacEnabled := h.servs.RbacService.Enabled()
+
+	var form wizardFixOwnerForm
+	if err := c.Bind(&form); err != nil {
+		return respondhtmx.ToastError(c, err.Error())
+	}
+	if form.PresetID == "" || form.Environment == "" {
+		return respondhtmx.ToastError(c, "preset_id and environment are required")
+	}
+
+	if rbacEnabled {
+		if !access.CanViewPreset(form.PresetID) {
+			return respondhtmx.ToastError(c, "access denied")
+		}
+		if !access.CanExecutePreset(form.PresetID) {
+			return respondhtmx.ToastError(c, "forbidden: you cannot execute restores for this preset")
+		}
+	}
+
+	result, err := h.servs.RestorationsService.FixOwner(ctx, form.PresetID, form.Environment)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return respondhtmx.ToastError(c, "preset not found")
+		case errors.Is(err, restorations.ErrRestoreEnvironmentRequired):
+			return respondhtmx.ToastError(c, "environment is required")
+		case errors.Is(err, restorations.ErrRestoreEnvironmentNotFound):
+			return respondhtmx.ToastError(c, "environment not found")
+		case errors.Is(err, restorations.ErrRestoreActionNotReady):
+			return respondhtmx.ToastError(c, "no backup available for this preset yet")
+		case errors.Is(err, restorations.ErrFixOwnerNoOwnerConfigured):
+			return respondhtmx.ToastError(c, "no owner configured for this target")
+		default:
+			return respondhtmx.ToastError(c, err.Error())
+		}
+	}
+
+	env := result.Environment
+	h.servs.AuditLogsService.Log(ctx, auditlogs.Entry{
+		UserEmail:   reqctx.GetCtx(c).User.Email,
+		Action:      "fix_owner",
+		PresetID:    form.PresetID,
+		PresetTitle: result.PresetTitle,
+		Environment: &env,
+		Source:      "ui",
+	})
+
+	return echoutil.RenderNodx(c, http.StatusOK, wizardFixOwnerSuccessContent(result))
+}
+
+func wizardFixOwnerSuccessContent(result restorations.FixOwnerResult) nodx.Node {
+	return nodx.Div(
+		nodx.Class("py-8 text-center space-y-3"),
+		nodx.Div(
+			nodx.Class("flex justify-center text-success"),
+			lucide.CircleCheck(nodx.Class("size-16")),
+		),
+		nodx.Div(
+			nodx.Class("text-lg font-bold"),
+			nodx.Text("Fix owner queued!"),
+		),
+		nodx.Div(
+			nodx.Class("text-sm text-base-content/60"),
+			nodx.Text(fmt.Sprintf(
+				"%s → %s, owner: %s", result.PresetTitle, result.Environment, result.Owner,
+			)),
+		),
+		nodx.Div(
+			nodx.Class("mt-4 flex justify-center gap-2"),
+			nodx.Button(
+				nodx.Type("button"),
+				nodx.Class("btn btn-ghost btn-sm"),
+				nodx.Attr("onClick", fmt.Sprintf("window.dispatchEvent(new Event('%s_close'));", wizardModalID)),
+				nodx.Text("Close"),
+			),
+			nodx.A(
+				nodx.Class("btn btn-primary btn-sm"),
+				nodx.Href(pathutil.BuildPath("/dashboard/jobs")),
+				nodx.Text("View Jobs"),
+			),
+		),
+	)
+}
+
 func wizardSuccessContent(result restorations.RestoreStartResult) nodx.Node {
 	return nodx.Div(
 		nodx.Class("py-8 text-center space-y-3"),
@@ -501,8 +778,8 @@ func wizardSuccessContent(result restorations.RestoreStartResult) nodx.Node {
 			),
 			nodx.A(
 				nodx.Class("btn btn-primary btn-sm"),
-				nodx.Href(pathutil.BuildPath("/dashboard/restorations")),
-				nodx.Text("View Restorations"),
+				nodx.Href(pathutil.BuildPath("/dashboard/jobs")),
+				nodx.Text("View Jobs"),
 			),
 		),
 	)

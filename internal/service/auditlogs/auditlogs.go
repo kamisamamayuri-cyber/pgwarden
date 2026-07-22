@@ -7,14 +7,18 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/logger"
 )
 
+const auditLogPurgeBatchLimit = 500
+
 type Service struct {
-	db dbgen.DBTX
+	db            dbgen.DBTX
+	retentionDays int
 }
 
-func New(db dbgen.DBTX) *Service {
-	return &Service{db: db}
+func New(db dbgen.DBTX, retentionDays int) *Service {
+	return &Service{db: db, retentionDays: retentionDays}
 }
 
 type Entry struct {
@@ -91,4 +95,31 @@ func (s *Service) List(ctx context.Context, page, limit int) ([]LogRow, error) {
 		result = append(result, r)
 	}
 	return result, rows.Err()
+}
+
+// HousekeepAuditLogs purges audit log entries older than retentionDays.
+func (s *Service) HousekeepAuditLogs() {
+	ctx := context.Background()
+
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM audit_logs
+		WHERE id IN (
+			SELECT id FROM audit_logs
+			WHERE created_at < NOW() - ($1 || ' days')::INTERVAL
+			ORDER BY created_at ASC
+			LIMIT $2
+		)`,
+		s.retentionDays, auditLogPurgeBatchLimit,
+	)
+	if err != nil {
+		logger.Error("error purging old audit logs", logger.KV{"error": err})
+		return
+	}
+
+	purged, err := res.RowsAffected()
+	if err != nil || purged == 0 {
+		return
+	}
+
+	logger.Info("old audit log entries purged", logger.KV{"purged": purged})
 }

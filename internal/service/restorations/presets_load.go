@@ -31,16 +31,16 @@ type restoreEndpointYAML struct {
 }
 
 type restoreTargetYAML struct {
-	Environment string `yaml:"environment"`
+	Environment         string `yaml:"environment"`
 	restoreEndpointYAML `yaml:",inline"`
 }
 
 var (
 	// restorePresetsMu guards restorePresets and restoreAdminGroup:
 	// they are hot-reloaded via LoadPresetsFromBytes while HTTP handlers read them.
-	restorePresetsMu     sync.RWMutex
-	restorePresets       []RestorePreset
-	restoreAdminGroup    string
+	restorePresetsMu  sync.RWMutex
+	restorePresets    []RestorePreset
+	restoreAdminGroup string
 	// restorePresetAliases maps legacy preset IDs to current ones for backwards compatibility.
 	restorePresetAliases = map[string]string{}
 )
@@ -130,10 +130,6 @@ func normalizePresetYAML(item restorePresetYAML, index int) (RestorePreset, erro
 	if err != nil {
 		return RestorePreset{}, err
 	}
-	if len(item.Targets) == 0 && strings.TrimSpace(item.RBAC.ExecuteGroup) != "" {
-		return RestorePreset{}, fmt.Errorf("%s: at least one target is required when execute_group is set", prefix)
-	}
-
 	seenEnvironments := map[string]struct{}{}
 	targets := make([]RestoreTarget, 0, len(item.Targets))
 	for i, target := range item.Targets {

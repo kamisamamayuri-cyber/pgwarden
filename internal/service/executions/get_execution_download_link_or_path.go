@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/google/uuid"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 )
 
 // GetExecutionDownloadLinkOrPath returns a download link for the file associated

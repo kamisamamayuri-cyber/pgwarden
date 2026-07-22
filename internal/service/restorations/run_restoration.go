@@ -10,6 +10,7 @@ import (
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/database/dbgen"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/integration/postgres"
 	"github.com/kamisamamayuri-cyber/pgwarden/internal/logger"
+	"github.com/kamisamamayuri-cyber/pgwarden/internal/util/logtail"
 )
 
 const (
@@ -62,18 +63,18 @@ func (s *Service) RunRestoration(
 		res = created
 	}
 
-	logTail := newRestorationLogTail(func(lines []string) {
+	logTail := logtail.New(func(lines []string) {
 		_ = updateRestoration(ctx, s, dbgen.RestorationsServiceUpdateRestorationParams{
 			ID: res.ID,
 			LogTail: sql.NullString{
 				Valid:  len(lines) > 0,
-				String: linesToLogTail(lines),
+				String: logtail.Join(lines),
 			},
 		})
 	})
 
 	fail := func(restorationID uuid.UUID, err error) (uuid.UUID, error) {
-		logTail.flushNow()
+		logTail.FlushNow()
 		logError(err)
 		_ = updateRestoration(ctx, s, dbgen.RestorationsServiceUpdateRestorationParams{
 			ID:         restorationID,
@@ -158,6 +159,7 @@ func (s *Service) RunRestoration(
 	if restoreFile.IsLocal {
 		err = s.ints.PGClient.RestoreFromLocalZip(
 			ctx, pgVersion, connString, restoreFile.Path, logTail,
+			s.env.PBW_RESTORE_PARALLEL_JOBS,
 		)
 	} else {
 		err = s.ints.PGClient.RestoreFromS3Zip(
@@ -172,6 +174,7 @@ func (s *Service) RunRestoration(
 			restoreFile.Bucket,
 			restoreFile.Path,
 			logTail,
+			s.env.PBW_RESTORE_PARALLEL_JOBS,
 		)
 	}
 	if err != nil {
@@ -190,7 +193,7 @@ func (s *Service) RunRestoration(
 		"restoration_id": res.ID.String(),
 		"execution_id":   params.ExecutionID.String(),
 	})
-	logTail.flushNow()
+	logTail.FlushNow()
 	err = updateRestoration(ctx, s, dbgen.RestorationsServiceUpdateRestorationParams{
 		ID:         res.ID,
 		Status:     sql.NullString{Valid: true, String: "success"},

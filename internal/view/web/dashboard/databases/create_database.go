@@ -21,6 +21,7 @@ type createDatabaseDTO struct {
 	Name             string `form:"name" validate:"required"`
 	Version          string `form:"version" validate:"required"`
 	ConnectionString string `form:"connection_string" validate:"required"`
+	Tag              string `form:"tag" validate:"omitempty,max=63"`
 }
 
 func (h *handlers) createDatabaseHandler(c echo.Context) error {
@@ -43,6 +44,7 @@ func (h *handlers) createDatabaseHandler(c echo.Context) error {
 			Name:             formData.Name,
 			PgVersion:        formData.Version,
 			ConnectionString: formData.ConnectionString,
+			Tag:              formData.Tag,
 		},
 	)
 	if err != nil {
@@ -98,6 +100,14 @@ func createDatabaseButton() nodx.Node {
 					Required:    true,
 					Type:        component.InputTypeText,
 					HelpText:    "Must be a valid PostgreSQL connection string with database name. Stored with PGP encryption.",
+				}),
+
+				component.InputControl(component.InputControlParams{
+					Name:        "tag",
+					Label:       "Worker tag",
+					Placeholder: "default",
+					Type:        component.InputTypeText,
+					HelpText:    "Only workers configured with a matching PBW_WORKER_TAGS entry run the connectivity healthcheck for this database. Empty = \"default\"",
 				}),
 			),
 

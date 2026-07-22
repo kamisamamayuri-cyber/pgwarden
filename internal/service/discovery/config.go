@@ -11,26 +11,52 @@ import (
 )
 
 type Config struct {
-	Defaults       DefaultsConfig `yaml:"defaults"`
-	Hosts          []HostConfig   `yaml:"hosts"`
-	HostsNoReplica []HostConfig   `yaml:"hosts_no_replica"`
+	Defaults       DefaultsConfig      `yaml:"defaults"`
+	Hosts          []HostConfig        `yaml:"hosts"`
+	HostsNoReplica []HostConfig        `yaml:"hosts_no_replica"`
+	HostTags       map[string][]string `yaml:"host_tags"`
+}
+
+func (c Config) TagForHost(host HostConfig) string {
+	if host.Tag != "" {
+		return host.Tag
+	}
+	for tag, names := range c.HostTags {
+		for _, name := range names {
+			if name == host.Name {
+				return tag
+			}
+		}
+	}
+	if c.Defaults.Tag != "" {
+		return c.Defaults.Tag
+	}
+	return "default"
 }
 
 type DefaultsConfig struct {
-	DestinationID     string   `yaml:"destination_id"`
-	RetentionDays     int16    `yaml:"retention_days"`
-	TimeZone          string   `yaml:"time_zone"`
-	IsActive          *bool    `yaml:"is_active"`
-	ExcludeDatabases  []string `yaml:"exclude_databases"`
-	CronMinuteStep    int      `yaml:"cron_minute_step"`
-	CronHourFrom      int      `yaml:"cron_hour_from"`
-	CronHourTo        int      `yaml:"cron_hour_to"`
-	ConnectionSSLMode string   `yaml:"connection_sslmode"`
-	ScanPorts         []string `yaml:"scan_ports"`
+	DestinationID string `yaml:"destination_id"`
+	RetentionDays int16  `yaml:"retention_days"`
+	// MonthlyRetentionEnabled sets backup.monthly_retention_enabled on every
+	// backup job created by discovery: the first successful execution of each
+	// calendar month is kept for PBW_MONTHLY_RETENTION_MONTHS months,
+	// independent of RetentionDays. Defaults to false, matching manually
+	// created backups.
+	MonthlyRetentionEnabled bool     `yaml:"monthly_retention_enabled"`
+	ParallelDump            bool     `yaml:"parallel_dump"`
+	TimeZone                string   `yaml:"time_zone"`
+	IsActive                *bool    `yaml:"is_active"`
+	ExcludeDatabases        []string `yaml:"exclude_databases"`
+	CronMinuteStep          int      `yaml:"cron_minute_step"`
+	CronHourFrom            int      `yaml:"cron_hour_from"`
+	CronHourTo              int      `yaml:"cron_hour_to"`
+	ConnectionSSLMode       string   `yaml:"connection_sslmode"`
+	ScanPorts               []string `yaml:"scan_ports"`
 	// MaxDBSize is a human-readable size limit (e.g. "10GB", "500MB"). Databases
 	// larger than this are skipped by discovery — no record is created in the
 	// metadata DB and no backup job is scheduled. Empty or "0" means no limit.
 	MaxDBSize string `yaml:"max_db_size"`
+	Tag       string `yaml:"tag"`
 }
 
 // MaxDBSizeBytes parses MaxDBSize and returns the limit in bytes.
@@ -69,6 +95,7 @@ type HostConfig struct {
 	ConnectionHost   string          `yaml:"connection_host"`
 	ExcludeDatabases []string        `yaml:"exclude_databases"`
 	Clusters         []ClusterConfig `yaml:"clusters,omitempty"`
+	Tag              string          `yaml:"tag,omitempty"`
 }
 
 type ClusterConfig struct {

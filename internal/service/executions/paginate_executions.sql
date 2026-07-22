@@ -54,7 +54,8 @@ SELECT
   databases.name AS database_name,
   databases.pg_version AS database_pg_version,
   destinations.name AS destination_name,
-  backups.is_local AS backup_is_local
+  backups.is_local AS backup_is_local,
+  backups.tag AS backup_tag
 FROM executions
 INNER JOIN backups ON backups.id = executions.backup_id
 INNER JOIN databases ON databases.id = backups.database_id
@@ -100,6 +101,12 @@ AND
   sqlc.narg('host')::TEXT IS NULL
   OR
   lower(backups.name) ILIKE '%' || lower(sqlc.narg('host')::TEXT) || '%'
+)
+AND
+(
+  sqlc.narg('ids')::UUID[] IS NULL
+  OR
+  executions.id = ANY(sqlc.narg('ids')::UUID[])
 )
 ORDER BY executions.started_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

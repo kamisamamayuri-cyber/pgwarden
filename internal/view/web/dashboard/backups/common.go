@@ -73,7 +73,7 @@ func timezoneFilenamesHelp() []nodx.Node {
 		nodx.Div(
 			nodx.Class("mt-4 flex justify-end items-center"),
 			nodx.A(
-				nodx.Href(component.RepoURL + "/-/blob/master/README.md"),
+				nodx.Href(component.RepoURL+"/-/blob/master/README.md"),
 				nodx.Target("_blank"),
 				nodx.Class("btn btn-ghost"),
 				component.SpanText("Learn more in project README"),
@@ -146,6 +146,28 @@ func retentionDaysHelp() []nodx.Node {
 	}
 }
 
+func monthlyRetentionHelp() []nodx.Node {
+	return []nodx.Node{
+		nodx.Div(
+			nodx.Class("space-y-2"),
+
+			component.PText(`
+				When enabled, the first successful execution of each calendar month is
+				kept for PBW_MONTHLY_RETENTION_MONTHS months (server-wide setting,
+				default 12), independent of the retention period above. All other,
+				more frequent executions of this backup still expire after the regular
+				retention period.
+			`),
+
+			component.PText(`
+				Example: retention of 30 days with monthly backups enabled keeps one
+				snapshot per month for 12 months, while daily copies are pruned after
+				30 days.
+			`),
+		),
+	}
+}
+
 func pgDumpOptionsHelp() []nodx.Node {
 	return []nodx.Node{
 		nodx.Div(
@@ -191,6 +213,36 @@ func serializableDeferrableHelp() []nodx.Node {
 		component.PText(`
 			Downside: under heavy write load the transaction may wait a long time
 			for a suitable window before starting.
+		`),
+	}
+}
+
+func parallelDumpDisables() nodx.Node {
+	return nodx.Group(
+		nodx.Attr(":disabled", `parallel_dump === "true"`),
+		nodx.Attr("x-effect", `if (parallel_dump === "true") $el.value = "false"`),
+	)
+}
+
+func parallelDumpHelp() []nodx.Node {
+	return []nodx.Node{
+		component.PText(`
+			Dumps tables with several pg_dump processes sharing one consistent
+			snapshot, instead of a single sequential pass. Speeds up databases
+			with many tables and works around per-connection network throughput
+			limits. The archive becomes multi-file (one SQL file per table plus
+			schema sections) with join/restore scripts included; restores work
+			with both formats.
+		`),
+		component.PText(`
+			The number of concurrent pg_dump processes is set server-wide by
+			PBW_DUMP_PARALLEL_JOBS. Each job opens its own connection to the
+			source database.
+		`),
+		component.PText(`
+			Not compatible with --data-only, --schema-only, or
+			--serializable-deferrable: such backups fall back to the classic
+			single-file dump.
 		`),
 	}
 }

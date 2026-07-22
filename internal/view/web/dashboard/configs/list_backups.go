@@ -44,23 +44,18 @@ func backupsList(configName string, backups []dbgen.ConfigFileBackup) nodx.Node 
 		)
 	}
 
-	rows := make([]nodx.Node, 0, len(backups))
+	cards := make([]nodx.Node, 0, len(backups))
 	for _, b := range backups {
 		restoreURL := pathutil.BuildPath("/dashboard/configs/backups/" + b.ID.String() + "/restore")
 		statusID := "config-status-" + configName
 
-		rows = append(rows, nodx.Tr(
-			nodx.Td(
-				nodx.Text(b.CreatedAt.Format("02.01.2006 15:04:05")),
-			),
-			nodx.Td(
+		cards = append(cards, component.ItemCard(
+			nil,
+			[]nodx.Node{
 				nodx.SpanEl(
-					nodx.Class("font-mono text-xs text-base-content/60 line-clamp-1"),
-					nodx.Text(firstLine(b.Content)),
+					nodx.Class("font-semibold flex-1"),
+					nodx.Text(b.CreatedAt.Format("02.01.2006 15:04:05")),
 				),
-			),
-			nodx.Td(
-				nodx.Class("text-right"),
 				nodx.Button(
 					nodx.Class("btn btn-xs btn-ghost text-warning"),
 					htmx.HxPost(restoreURL),
@@ -70,7 +65,13 @@ func backupsList(configName string, backups []dbgen.ConfigFileBackup) nodx.Node 
 					lucide.RotateCcw(nodx.Class("size-3")),
 					nodx.Text("Roll back"),
 				),
-			),
+			},
+			[]nodx.Node{
+				component.Stat("Start", nodx.SpanEl(
+					nodx.Class("font-mono text-xs text-base-content/60 line-clamp-1"),
+					nodx.Text(firstLine(b.Content)),
+				)),
+			},
 		))
 	}
 
@@ -82,20 +83,7 @@ func backupsList(configName string, backups []dbgen.ConfigFileBackup) nodx.Node 
 		),
 		component.CardBox(component.CardBoxParams{
 			Children: []nodx.Node{
-				nodx.Div(
-					nodx.Class("overflow-x-auto"),
-					nodx.Table(
-						nodx.Class("table table-xs text-nowrap"),
-						nodx.Thead(
-							nodx.Tr(
-								nodx.Th(component.SpanText("Date")),
-								nodx.Th(component.SpanText("Start")),
-								nodx.Th(),
-							),
-						),
-						nodx.Tbody(nodx.Group(rows...)),
-					),
-				),
+				nodx.Group(cards...),
 			},
 		}),
 	)
